@@ -1,0 +1,91 @@
+import uuid
+from datetime import datetime
+
+# Centralized mock and persistent database to be shared across routers
+import json
+import os
+import uuid
+from datetime import datetime
+
+# Persistence
+DB_FILE = "data/db.json"
+
+def load_db():
+    if os.path.exists(DB_FILE):
+        try:
+            with open(DB_FILE, 'r') as f:
+                return json.load(f)
+        except:
+            pass
+    return {
+        "users": {},
+        "shops": {},
+        "services": {},
+        "staff": {},
+        "bookings": {},
+        "reviews": {},
+        "notifications": []
+    }
+
+def save_db():
+    data = {
+        "users": MOCK_USERS,
+        "shops": MOCK_SHOPS,
+        "services": MOCK_SERVICES,
+        "staff": MOCK_STAFF,
+        "bookings": MOCK_BOOKINGS,
+        "reviews": MOCK_REVIEWS,
+        "notifications": MOCK_NOTIFICATIONS
+    }
+    # Ensure directory exists
+    os.makedirs(os.path.dirname(DB_FILE), exist_ok=True)
+    with open(DB_FILE, 'w') as f:
+        json.dump(data, f, indent=2)
+
+# Initialize Data
+_db_data = load_db()
+
+# Exposed Dictionaries (Referenced by routers)
+MOCK_USERS = _db_data.get("users", {})
+MOCK_SHOPS = _db_data.get("shops", {})
+MOCK_SERVICES = _db_data.get("services", {})
+MOCK_STAFF = _db_data.get("staff", {})
+MOCK_BOOKINGS = _db_data.get("bookings", {})
+MOCK_REVIEWS = _db_data.get("reviews", {})
+MOCK_NOTIFICATIONS = _db_data.get("notifications", [])
+
+# --- Helper Functions ---
+
+def get_user_by_email(email: str):
+    for user in MOCK_USERS.values():
+        if user.get("email") == email:
+            return user
+    return None
+
+def get_user_by_id(user_id: str):
+    return MOCK_USERS.get(user_id)
+
+def add_user(user_data):
+    MOCK_USERS[user_data["id"]] = user_data
+    save_db()
+    return user_data
+
+def update_user(user_id: str, update_data: dict):
+    if user_id in MOCK_USERS:
+        MOCK_USERS[user_id].update(update_data)
+        save_db()
+        return MOCK_USERS[user_id]
+    return None
+
+def get_hydrated_shop(shop_id: str):
+    shop = MOCK_SHOPS.get(shop_id)
+    if not shop:
+        return None
+    
+    hydrated = shop.copy()
+    hydrated["staff"] = [MOCK_STAFF[sid] for sid in shop.get("staffRefs", []) if sid in MOCK_STAFF]
+    hydrated["services"] = [MOCK_SERVICES[sid] for sid in shop.get("serviceRefs", []) if sid in MOCK_SERVICES]
+    return hydrated
+
+def get_all_hydrated_shops():
+    return [get_hydrated_shop(sid) for sid in MOCK_SHOPS]

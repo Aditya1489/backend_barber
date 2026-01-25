@@ -1,0 +1,346 @@
+{
+  "users": {
+    "b4e803ee-891a-4fd3-9026-959508193580": {
+      "id": "b4e803ee-891a-4fd3-9026-959508193580",
+      "name": "Aditya ",
+      "email": "adityachavhan1489@gmail.com",
+      "phone": "9373917738",
+      "password": "hashed_Pass@123",
+      "role": "OWNER",
+      "profilePhoto": "/data/user/0/com.barbersync.barber_sync/cache/d5fc6500-5599-4c52-9214-824031ca793b/IMG_0660.jpg",
+      "permissions": {
+        "location": false,
+        "notifications": false,
+        "camera": false,
+        "storage": false
+      },
+      "createdAt": "2026-01-18T10:32:52.719989Z"
+    },
+    "st_3fd8adc6": {
+      "id": "st_3fd8adc6",
+      "name": "Sattu",
+      "phone": "9373917731",
+      "role": "BARBER",
+      "email": "sattu@temp.com",
+      "permissions": {
+        "location": true,
+        "notifications": true
+      }
+    },
+    "st_d7ddb19b": {
+      "id": "st_d7ddb19b",
+      "name": "Adarsh ",
+      "phone": "9373917732",
+      "role": "BARBER",
+      "email": "adarsh.@temp.com",
+      "permissions": {
+        "location": true,
+        "notifications": true
+      }
+    },
+    "st_fc4b0704": {
+      "id": "st_fc4b0704",
+      "name": "Adarsh",
+      "phone": "9373917732",
+      "email": "adarsh@temp.com",
+      "role": "BARBER",
+      "password": "hashed_default_password",
+      "permissions": {
+        "location": true,
+        "notifications": true
+      }
+    },
+    "b1aedbf3-ca82-474a-8fde-5cfb5114eaf9": {
+      "id": "b1aedbf3-ca82-474a-8fde-5cfb5114eaf9",
+      "name": "Sattu ",
+      "email": "adityachavhan@gmail.com",
+      "phone": "9373917731",
+      "password": "hashed_Pass@123",
+      "role": "BARBER",
+      "profilePhoto": "/data/user/0/com.barbersync.barber_sync/cache/154fd110-32a6-4e82-9515-95ddd3576216/IMG_0664.heif",
+      "permissions": {
+        "location": false,
+        "notifications": false,
+        "camera": false,
+        "storage": false
+      },
+      "createdAt": "2026-01-18T11:31:57.675019Z",
+      "experience": 10,
+      "about": "Am a good barber",
+      "portfolio": [
+        "/data/user/0/com.barbersync.barber_sync/cache/1918f2df-47fb-4650-af6e-85e59391db83/IMG_0549.heif",
+        "/data/user/0/com.barbersync.barber_sync/cache/a44e4dd0-b4e1-4dec-b639-0bfa2e249dfe/IMG_0548.heif",
+        "/data/user/0/com.barbersync.barber_sync/cache/19911b40-4f2a-4e02-b074-da8fc9124abe/IMG_0546.heif",
+        "/data/user/0/com.barbersync.barber_sync/cache/c62e2c71-2e2e-4bfa-b071-3af1aff7b391/IMG_0547.heif"
+      ]
+    },
+    "e35baa60-06a8-4e2b-9b8b-c26b36b47b6b": {
+      "id": "e35baa60-06a8-4e2b-9b8b-c26b36b47b6b",
+      "name": "Ashish Kumar",
+      "email": "ashish@gmail.com",
+      "phone": "1234567890",
+      "password": "hashed_Pass@123",
+      "role": "OWNER",
+      "profilePhoto": "/data/user/0/com.barbersync.barber_sync/cache/f144481b-e809-4225-9e9c-6f782a4afd4f/IMG_0246.heif",
+      "permissions": {
+        "location": false,
+        "notifications": false,
+        "camera": false,
+        "storage": false
+      },
+      "createdAt": "2026-01-20T19:41:20.687005Z"
+    },
+    "st_92dba39d": {
+      "id": "st_92dba39d",
+      "name": "Rahul",
+      "phone": "1234567891",
+      "role": "BARBER",
+      "email": "rahul@gmail.com",
+      "permissions": {
+        "location": true,
+        "notifications": true
+      },
+      "password": "hashed_Pass@123",
+      "createdAt": "2026-01-20T20:56:52.536541Z",
+      "profilePhoto": "/data/user/0/com.barbersync.barber_sync/cache/8aa27d15-91eb-4713-b96c-27e77e2cd701/IMG_0115.heif",
+      "experience": 7,
+      "about": "Hi Habibi",
+      "portfolio": [
+        "/data/user/0/com.barbersync.barber_sync/cache/0fbb0f28-e7d4-48fc-a64c-3b1dc0fd3cf9/IMG_0124.heif",
+        "/data/user/0/com.barbersync.barber_sync/cache/3c97b552-0d1c-454b-9cb7-a9f1a5a90236/IMG_0123.heif",
+        "/data/user/0/com.barbersync.barber_sync/cache/4bd06439-a702-4aad-9983-9c486f26eac5/IMG_0122.heif",
+        "/data/user/0/com.barbersync.barber_sync/cache/e8006362-4463-4852-8835-b9578c63b402/IMG_0121.heif"
+      ]
+    },
+    "st_5425a9a2": {
+      "id": "st_5425a9a2",
+      "name": "Aditya Chavhan ",
+      "phone": "1234567892",
+      "role": "BARBER",
+      "email": "aditya@gmail.com",
+      "permissions": {
+        "location": true,
+        "notifications": true
+      },
+      "password": "hashed_Pass@123",
+      "createdAt": "2026-01-20T19:56:38.628957Z",
+      "profilePhoto": "/data/user/0/com.barbersync.barber_sync/cache/89de96ed-7f37-4f4b-a024-c2cbe7a9f44d/DSC07289.jpg",
+      "experience": 12,
+      "about": "Good Guy",
+      "portfolio": [
+        "/data/user/0/com.barbersync.barber_sync/cache/9da80eff-bf99-4e53-9ef1-35b1e4d89e80/IMG_0554.heif",
+        "/data/user/0/com.barbersync.barber_sync/cache/8f255e0d-b93c-474e-9fd2-1ae92b81bd5a/IMG_0553.heif",
+        "/data/user/0/com.barbersync.barber_sync/cache/56885aba-7469-46af-abb2-2a0f5920c1e3/IMG_0552.heif"
+      ]
+    },
+    "96e305ca-b3ce-4ba7-8dd6-cbf84079e778": {
+      "id": "96e305ca-b3ce-4ba7-8dd6-cbf84079e778",
+      "name": "Customer 1",
+      "email": "customer1@gmail.com",
+      "phone": "9876543210",
+      "password": "hashed_Pass@123",
+      "role": "CUSTOMER",
+      "profilePhoto": "/data/user/0/com.barbersync.barber_sync/cache/3666d76b-9936-41b4-8085-e6ae22b1dbb1/IMG_0579.jpg",
+      "permissions": {
+        "location": false,
+        "notifications": false,
+        "camera": false,
+        "storage": false
+      },
+      "createdAt": "2026-01-21T19:13:27.699432Z"
+    }
+  },
+  "shops": {
+    "43a5220c-bf95-47c8-a65e-03d8ab2f892d": {
+      "id": "43a5220c-bf95-47c8-a65e-03d8ab2f892d",
+      "name": "Owner A ",
+      "address": "Pune",
+      "description": "Professional Barber Shop",
+      "rating": 0.0,
+      "reviewsCount": 0,
+      "photos": [
+        "/data/user/0/com.barbersync.barber_sync/cache/154fd110-32a6-4e82-9515-95ddd3576216/IMG_0664.heif",
+        "/data/user/0/com.barbersync.barber_sync/cache/d5fc6500-5599-4c52-9214-824031ca793b/IMG_0660.jpg",
+        "/data/user/0/com.barbersync.barber_sync/cache/3a94d7c1-e193-4c38-9c8b-8bb8fbac041c/IMG_0666.heif",
+        "/data/user/0/com.barbersync.barber_sync/cache/b13621ef-9050-4efc-a104-ac1557b793a2/IMG_0665.heif"
+      ],
+      "coordinates": {
+        "lat": 37.4219983,
+        "lng": -122.084
+      },
+      "ownerId": "b4e803ee-891a-4fd3-9026-959508193580",
+      "phone": "9373917738",
+      "email": "adityachavhan1489@gmail.com",
+      "hours": {},
+      "amenities": [],
+      "staff": [],
+      "services": [],
+      "serviceRefs": [
+        "s_fbba2f66",
+        "s_355e4d0a",
+        "s_2b41ee6e",
+        "s_3df6874a"
+      ],
+      "staffRefs": [
+        "st_3fd8adc6",
+        "st_fc4b0704"
+      ]
+    },
+    "09d91a5e-d859-43df-bf4a-c91fd0354f93": {
+      "id": "09d91a5e-d859-43df-bf4a-c91fd0354f93",
+      "name": "Royal Salon X",
+      "address": "Pune",
+      "description": "Professional Barber Shop",
+      "rating": 0.0,
+      "reviewsCount": 0,
+      "photos": [
+        "/data/user/0/com.barbersync.barber_sync/cache/58e7cfc2-5f77-49cb-8631-b6de7c72853b/IMG_0268.heif",
+        "/data/user/0/com.barbersync.barber_sync/cache/b1cef876-91a1-4e7e-a836-96e3878327d7/IMG_0250.heif",
+        "/data/user/0/com.barbersync.barber_sync/cache/f144481b-e809-4225-9e9c-6f782a4afd4f/IMG_0246.heif",
+        "/data/user/0/com.barbersync.barber_sync/cache/2de715bc-5572-4d46-a983-bf1c4c51c858/IMG_0264.heif",
+        "/data/user/0/com.barbersync.barber_sync/cache/f0e7000d-de66-4062-97b7-79ad5fe1e105/IMG_0256.heif"
+      ],
+      "coordinates": {
+        "lat": 37.4219983,
+        "lng": -122.084
+      },
+      "ownerId": "e35baa60-06a8-4e2b-9b8b-c26b36b47b6b",
+      "phone": "1234567890",
+      "email": "ashish@gmail.com",
+      "hours": {},
+      "amenities": [],
+      "staff": [],
+      "services": [],
+      "serviceRefs": [
+        "s_7a7745f5",
+        "s_a842bf6a",
+        "s_f30c38da"
+      ],
+      "staffRefs": [
+        "st_92dba39d",
+        "st_5425a9a2"
+      ]
+    }
+  },
+  "services": {
+    "s_fbba2f66": {
+      "id": "s_fbba2f66",
+      "name": "A",
+      "price": 5.0,
+      "duration": 10,
+      "imageUrl": "https://picsum.photos/400/300"
+    },
+    "s_355e4d0a": {
+      "id": "s_355e4d0a",
+      "name": "B",
+      "price": 10.0,
+      "duration": 15,
+      "imageUrl": "https://picsum.photos/400/300"
+    },
+    "s_2b41ee6e": {
+      "id": "s_2b41ee6e",
+      "name": "C",
+      "price": 15.0,
+      "duration": 20,
+      "imageUrl": "https://picsum.photos/400/300"
+    },
+    "s_08136909": {
+      "id": "s_08136909",
+      "name": "D",
+      "price": 20.0,
+      "duration": 25,
+      "imageUrl": "https://picsum.photos/400/300"
+    },
+    "s_3df6874a": {
+      "id": "s_3df6874a",
+      "name": "D",
+      "price": 20.0,
+      "duration": 25,
+      "imageUrl": "https://picsum.photos/400/300"
+    },
+    "s_7a7745f5": {
+      "id": "s_7a7745f5",
+      "name": "Hair Cut",
+      "price": 10.0,
+      "duration": 15,
+      "imageUrl": "https://picsum.photos/400/300"
+    },
+    "s_a842bf6a": {
+      "id": "s_a842bf6a",
+      "name": "Beard Cut",
+      "price": 5.0,
+      "duration": 15,
+      "imageUrl": "https://picsum.photos/400/300"
+    },
+    "s_f30c38da": {
+      "id": "s_f30c38da",
+      "name": "Facial ",
+      "price": 10.0,
+      "duration": 30,
+      "imageUrl": "https://picsum.photos/400/300"
+    }
+  },
+  "staff": {
+    "st_3fd8adc6": {
+      "id": "st_3fd8adc6",
+      "name": "Sattu ",
+      "role": "Barber",
+      "experience": 10,
+      "rating": 0.0,
+      "reviewsCount": 0,
+      "imageUrl": "/data/user/0/com.barbersync.barber_sync/cache/6a3f3fb7-a085-4b1f-bf18-c9a5e5fd68cf/IMG_0671.heif",
+      "description": "Am a good barber",
+      "workPhotos": [
+        "/data/user/0/com.barbersync.barber_sync/cache/1918f2df-47fb-4650-af6e-85e59391db83/IMG_0549.heif",
+        "/data/user/0/com.barbersync.barber_sync/cache/a44e4dd0-b4e1-4dec-b639-0bfa2e249dfe/IMG_0548.heif",
+        "/data/user/0/com.barbersync.barber_sync/cache/19911b40-4f2a-4e02-b074-da8fc9124abe/IMG_0546.heif",
+        "/data/user/0/com.barbersync.barber_sync/cache/c62e2c71-2e2e-4bfa-b071-3af1aff7b391/IMG_0547.heif"
+      ]
+    },
+    "st_d7ddb19b": {
+      "id": "st_d7ddb19b",
+      "name": "Adarsh ",
+      "role": "Barber",
+      "experience": 0,
+      "rating": 0.0,
+      "reviewsCount": 0,
+      "imageUrl": "https://picsum.photos/200/200"
+    },
+    "st_fc4b0704": {
+      "id": "st_fc4b0704",
+      "name": "Adarsh",
+      "role": "Barber",
+      "experience": 0,
+      "rating": 0.0,
+      "reviewsCount": 0,
+      "imageUrl": "https://picsum.photos/200/200"
+    },
+    "st_92dba39d": {
+      "id": "st_92dba39d",
+      "name": "Rahul Kotiyal",
+      "role": "Barber",
+      "experience": 0,
+      "rating": 0.0,
+      "reviewsCount": 0,
+      "imageUrl": "https://picsum.photos/200/200"
+    },
+    "st_5425a9a2": {
+      "id": "st_5425a9a2",
+      "name": "Aditya Chavhan ",
+      "role": "Barber",
+      "experience": 12,
+      "rating": 0.0,
+      "reviewsCount": 0,
+      "imageUrl": "/data/user/0/com.barbersync.barber_sync/cache/89de96ed-7f37-4f4b-a024-c2cbe7a9f44d/DSC07289.jpg",
+      "description": "Good Guy",
+      "workPhotos": [
+        "/data/user/0/com.barbersync.barber_sync/cache/9da80eff-bf99-4e53-9ef1-35b1e4d89e80/IMG_0554.heif",
+        "/data/user/0/com.barbersync.barber_sync/cache/8f255e0d-b93c-474e-9fd2-1ae92b81bd5a/IMG_0553.heif",
+        "/data/user/0/com.barbersync.barber_sync/cache/56885aba-7469-46af-abb2-2a0f5920c1e3/IMG_0552.heif"
+      ]
+    }
+  },
+  "bookings": {},
+  "reviews": {},
+  "notifications": []
+}
