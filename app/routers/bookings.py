@@ -10,7 +10,10 @@ from app.db import (
     create_booking, 
     get_bookings, 
     get_booking_by_id, 
-    update_booking
+    update_booking,
+    create_notification,
+    get_user_by_id,
+    get_staff_full_profile
 )
 
 # Request/Response Models
@@ -34,19 +37,22 @@ class BookingResponse(BaseModel):
     shopId: str
     staffId: str
     customerId: str
+    customerName: Optional[str] = "Customer"
+    customerPhoto: Optional[str] = None
     services: List[str]
     date: str
     timeSlot: str
     status: str
     totalAmount: float
     totalDuration: int
-    bookedAt: str
+    bookedAt: datetime
     notes: str
 
 # Routes
 @router.post("/", response_model=BookingResponse, status_code=status.HTTP_201_CREATED)
 async def create_booking_route(booking: CreateBookingRequest):
     """Create a new booking"""
+    print(f"[DEBUG] Creating booking: {booking.model_dump()}")
     
     # Calculate total amount and duration (mock calculation)
     total_amount = len(booking.services) * 30.0  # $30 per service
@@ -66,8 +72,48 @@ async def create_booking_route(booking: CreateBookingRequest):
         "notes": booking.notes or ""
     }
     
-    new_booking = create_booking(booking_data)
-    return new_booking
+    try:
+        new_booking = create_booking(booking_data)
+        
+        # --- TRIGGER NOTIFICATION FOR STAFF ---
+        try:
+            # 1. Get Customer Name
+            customer = get_user_by_id(booking.customerId)
+            customer_name = customer["name"] if customer else "A Customer"
+            
+            # 2. Get Staff's User ID (to send notification to)
+            # Booking has `staffId` (profile ID), notification needs `userId`
+            staff_profile = get_staff_full_profile(booking.staffId)
+            
+            if staff_profile and staff_profile.get("userId"):
+                staff_user_id = staff_profile["userId"]
+                
+                # 3. Create Notification
+                create_notification({
+                    "userId": staff_user_id,
+                    "title": "New Appointment Request",
+                    "body": f"You have a new booking request from {customer_name} on {booking.date} at {booking.timeSlot}.",
+                    "type": "APPOINTMENT",
+                    "data": {"bookingId": new_booking["id"]}
+                })
+                print(f"[NOTIF] Sent appointment notification to staff user {staff_user_id}")
+            else:
+                print(f"[NOTIF] Could not find staff profile or userId for staffId: {booking.staffId}")
+
+        except Exception as e:
+            print(f"[NOTIF] Failed to send notification: {e}")
+            import traceback
+            with open("notification_error.log", "w") as f:
+                f.write(traceback.format_exc())
+        # --------------------------------------
+        
+        return new_booking
+
+    except Exception as e:
+        import traceback
+        with open("booking_error.log", "w") as f:
+             f.write(traceback.format_exc())
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/", response_model=List[BookingResponse])
 async def get_bookings_route(
@@ -120,7 +166,7 @@ async def update_booking_route(booking_id: str, update_data: UpdateBookingReques
 async def update_booking_status_route(booking_id: str, new_status: str):
     """Update booking status (PENDING, ACCEPTED, CANCELLED, COMPLETED)"""
     
-    valid_statuses = ["PENDING", "ACCEPTED", "CANCELLED", "COMPLETED"]
+    valid_statuses = ["PENDING", "ACCEPTED", "CANCELLED", "COMPLETED", "NO_SHOW"]
     if new_status not in valid_statuses:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -133,6 +179,36 @@ async def update_booking_status_route(booking_id: str, new_status: str):
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Booking not found"
         )
+    
+    # --- TRIGGER NOTIFICATION FOR CUSTOMER ---
+    try:
+        title = "Appointment Status Updated"
+        body = f"Your appointment has been {new_status.lower()}."
+        
+        if new_status == "ACCEPTED":
+            title = "Appointment Confirmed! ✅"
+            body = f"Great news! Your appointment on {updated['date']} at {updated['timeSlot']} has been accepted."
+        elif new_status == "CANCELLED":
+            title = "Appointment Cancelled ❌"
+            body = f"We're sorry, your appointment on {updated['date']} at {updated['timeSlot']} has been cancelled."
+        elif new_status == "COMPLETED":
+            title = "All Done! ✨"
+            body = f"Your appointment on {updated['date']} is complete. We hope you enjoyed the service!"
+        elif new_status == "NO_SHOW":
+            title = "Appointment Missed ❓"
+            body = f"It looks like you missed your appointment on {updated['date']}. Please contact us if you'd like to reschedule."
+        
+        create_notification({
+            "userId": updated["customerId"],
+            "title": title,
+            "body": body,
+            "type": "APPOINTMENT_STATUS",
+            "data": {"bookingId": booking_id, "status": new_status}
+        })
+        print(f"[NOTIF] Sent status update notification to customer {updated['customerId']}")
+    except Exception as e:
+        print(f"[NOTIF] Failed to send status update notification: {e}")
+    # ----------------------------------------
     
     return {
         "message": f"Booking status updated to {new_status}",

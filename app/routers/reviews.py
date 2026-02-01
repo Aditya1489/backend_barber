@@ -16,10 +16,11 @@ from app.db import (
 # Request/Response Models
 class CreateReviewRequest(BaseModel):
     shopId: str
+    staffId: Optional[str] = None  # NEW: Optional staff link
     customerId: str
     customerName: str
     rating: int  # 1-5
-    comment: str
+    comment: Optional[str] = ""
     photos: Optional[List[str]] = []
 
 class UpdateReviewRequest(BaseModel):
@@ -30,10 +31,11 @@ class UpdateReviewRequest(BaseModel):
 class ReviewResponse(BaseModel):
     id: str
     shopId: str
+    staffId: Optional[str] = None
     customerId: str
     customerName: str
     rating: int
-    comment: str
+    comment: Optional[str] = ""
     photos: List[str]
     createdAt: str
     helpful: int
@@ -113,6 +115,39 @@ async def get_shop_review_stats(shop_id: str):
         
     return {
         "shopId": shop_id,
+        "totalReviews": total,
+        "averageRating": round(avg, 1),
+        "ratingDistribution": dist
+    }
+
+# --- STAFF REVIEW ENDPOINTS ---
+
+@router.get("/staff/{staff_id}")
+async def get_staff_reviews(staff_id: str, limit: int = 50, offset: int = 0):
+    """Get all reviews for a specific staff member"""
+    reviews = get_reviews(staff_id=staff_id)
+    return reviews[offset:offset + limit]
+
+@router.get("/staff/{staff_id}/stats")
+async def get_staff_review_stats(staff_id: str):
+    """Get review statistics for a staff member"""
+    reviews = get_reviews(staff_id=staff_id)
+    if not reviews:
+        return {
+            "staffId": staff_id,
+            "totalReviews": 0,
+            "averageRating": 0.0,
+            "ratingDistribution": {"5": 0, "4": 0, "3": 0, "2": 0, "1": 0}
+        }
+    
+    total = len(reviews)
+    avg = sum(r["rating"] for r in reviews) / total
+    dist = {"5": 0, "4": 0, "3": 0, "2": 0, "1": 0}
+    for r in reviews:
+        dist[str(int(r["rating"]))] += 1
+        
+    return {
+        "staffId": staff_id,
         "totalReviews": total,
         "averageRating": round(avg, 1),
         "ratingDistribution": dist

@@ -38,7 +38,7 @@ class Shop(Base):
     description = Column(String, nullable=True)
     rating = Column(Float, default=0.0)
     reviewsCount = Column(Integer, default=0)
-    photos = Column(JSON, default=[])
+    # photos column moved to ShopPhoto table
     coordinates = Column(JSON, default={}) # {"lat": 0.0, "lng": 0.0}
     ownerId = Column(String, ForeignKey("users.id"))
     phone = Column(String, nullable=True)
@@ -50,6 +50,7 @@ class Shop(Base):
     owner = relationship("User", back_populates="shops_owned")
     staff = relationship("Staff", back_populates="shop")
     services = relationship("Service", back_populates="shop")
+    photo_rows = relationship("ShopPhoto", back_populates="shop", cascade="all, delete-orphan")
 
 class Staff(Base):
     __tablename__ = "staff_profiles"
@@ -64,11 +65,15 @@ class Staff(Base):
     reviewsCount = Column(Integer, default=0)
     imageUrl = Column(String, nullable=True)
     description = Column(String, nullable=True)
-    workPhotos = Column(JSON, default=[])
+    skills = Column(String, nullable=True)  # Comma-separated skill names
+    # workPhotos moved to StaffWorkPhoto table
+    # services moved to StaffService table
     
     # Relationships
     user = relationship("User", back_populates="staff_profile")
     shop = relationship("Shop", back_populates="staff")
+    work_photo_rows = relationship("StaffWorkPhoto", back_populates="staff", cascade="all, delete-orphan")
+    service_objs = relationship("Service", secondary="staff_services_link")
 
 class Service(Base):
     __tablename__ = "services"
@@ -104,6 +109,7 @@ class Review(Base):
     
     id = Column(String, primary_key=True, default=generate_uuid)
     shopId = Column(String, ForeignKey("shops.id"))
+    staffId = Column(String, ForeignKey("staff_profiles.id"), nullable=True)  # NEW: Link to staff
     customerId = Column(String, ForeignKey("users.id"))
     customerName = Column(String, nullable=False)
     rating = Column(Float, nullable=False)
@@ -123,3 +129,28 @@ class Notification(Base):
     data = Column(JSON, default={})
     isRead = Column(Boolean, default=False)
     createdAt = Column(DateTime, default=datetime.utcnow)
+
+class ShopPhoto(Base):
+    __tablename__ = "shop_photos"
+    
+    id = Column(String, primary_key=True, default=generate_uuid)
+    shopId = Column(String, ForeignKey("shops.id"))
+    url = Column(String, nullable=False)
+    order = Column(Integer, default=0)
+    
+    shop = relationship("Shop", back_populates="photo_rows")
+
+class StaffWorkPhoto(Base):
+    __tablename__ = "staff_work_photos"
+    
+    id = Column(String, primary_key=True, default=generate_uuid)
+    staffId = Column(String, ForeignKey("staff_profiles.id"))
+    url = Column(String, nullable=False)
+    
+    staff = relationship("Staff", back_populates="work_photo_rows")
+
+class StaffService(Base):
+    __tablename__ = "staff_services_link"
+    
+    staffId = Column(String, ForeignKey("staff_profiles.id"), primary_key=True)
+    serviceId = Column(String, ForeignKey("services.id"), primary_key=True)

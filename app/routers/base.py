@@ -8,4 +8,5 @@ router = APIRouter()
 @router.get("/appointments")
 async def get_appointments(user_id: str):
     """Bridge endpoint for customer appointments"""
+    # Ensure we use the correct keyword argument for the DB helper
     return get_bookings(customer_id=user_id)

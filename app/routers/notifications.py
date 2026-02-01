@@ -25,6 +25,8 @@ class NotificationResponse(BaseModel):
     userId: str
     title: str
     body: str
+    type: str
+    data: Optional[dict] = {}
     isRead: bool
     createdAt: str
 

@@ -76,6 +76,8 @@ class UpdateStaffProfileRequest(BaseModel):
     workPhotos: Optional[List[str]] = None
     profilePhoto: Optional[str] = None
     portfolio: Optional[List[str]] = None
+    services: Optional[List[str]] = None  # List of service IDs
+    skills: Optional[str] = None  # Comma-separated skill names
 
 # Routes
 @router.get("/", response_model=List[dict])
@@ -332,28 +334,48 @@ async def get_staff_profile(staff_id: str):
 
 @router.put("/staff/{staff_id}/profile")
 async def update_staff_profile_route(staff_id: str, data: UpdateStaffProfileRequest):
-    """Update staff profile details (both User and Staff records)"""
-    from app.db import update_user, update_staff_profile
+    from app.db import update_user, update_staff_profile, get_staff_full_profile
     
+    print(f"[UPDATE_STAFF_PROFILE] Received data: {data.model_dump()}")
+    
+    # Resolve the REAL User ID first
+    # staff_id could be the Staff ID (most likely) or User ID
+    # utilizing get_staff_full_profile's logic to find the link
+    profile = get_staff_full_profile(staff_id)
+    if not profile:
+        raise HTTPException(status_code=404, detail="Staff member not found")
+        
+    real_user_id = profile["userId"] if profile.get("userId") else profile["id"]
+    real_staff_id = profile["id"] # The ID of the Staff record specifically
+
     # 1. Update User Table
     user_updates = {}
     if data.name: user_updates["name"] = data.name
     if data.phone: user_updates["phone"] = data.phone
-    if data.profilePhoto: user_updates["profilePhoto"] = data.profilePhoto
+    if data.profilePhoto is not None: user_updates["profilePhoto"] = data.profilePhoto  # Allow empty string to remove photo
     if data.portfolio: user_updates["portfolio"] = data.portfolio
     
     if user_updates:
-        update_user(staff_id, user_updates)
+        print(f"[UPDATE_STAFF_PROFILE] Updating user table: {user_updates}")
+        update_user(real_user_id, user_updates)
 
     # 2. Update Staff Table (Professional Details)
     staff_updates = {}
     if data.experience is not None: staff_updates["experience"] = data.experience
     if data.description: staff_updates["description"] = data.description
-    if data.workPhotos: staff_updates["workPhotos"] = data.workPhotos
-    if data.profilePhoto: staff_updates["imageUrl"] = data.profilePhoto
+    if data.workPhotos is not None: 
+        staff_updates["workPhotos"] = data.workPhotos
+        print(f"[UPDATE_STAFF_PROFILE] workPhotos to update: {data.workPhotos}")
+    if data.profilePhoto is not None: staff_updates["imageUrl"] = data.profilePhoto  # Allow empty string to remove photo
+    if data.services is not None: staff_updates["services"] = data.services
+    if data.skills is not None: 
+        staff_updates["skills"] = data.skills
+        print(f"[UPDATE_STAFF_PROFILE] skills to update: {data.skills}")
     
     if staff_updates:
-        updated_staff = update_staff_profile(staff_id, staff_updates)
+        print(f"[UPDATE_STAFF_PROFILE] Updating staff table: {staff_updates}")
+        print(f"[UPDATE_STAFF_PROFILE] Using real_staff_id: {real_staff_id}")
+        updated_staff = update_staff_profile(real_staff_id, staff_updates)
         if not updated_staff:
              # If doesn't exist, we might need to create it
              pass
