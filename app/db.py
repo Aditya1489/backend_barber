@@ -285,6 +285,26 @@ def update_staff_profile(staff_id: str, update_data: dict):
                     setattr(staff, key, value)
             db.commit()
             db.refresh(staff)
+        else:
+            # If staff not found, we assume the provided staff_id is a userId
+            # and we should create a profile for them.
+            user = db.query(models.User).filter(models.User.id == staff_id).first()
+            if not user:
+                return None
+            
+            # Extract basic professional info from update_data or fall back
+            new_staff = models.Staff(
+                userId=user.id,
+                name=user.name,
+                experience=update_data.get("experience", 0),
+                description=update_data.get("description", ""),
+                imageUrl=update_data.get("imageUrl") or user.profilePhoto,
+                role=update_data.get("role", "Barber")
+            )
+            db.add(new_staff)
+            db.commit()
+            db.refresh(new_staff)
+            staff = new_staff
             
             # Return dict manual composition
             # (Fetching fresh to include relations)
@@ -373,8 +393,8 @@ def get_staff_full_profile(staff_id: str):
             "photo": user.profilePhoto,
             "imageUrl": staff.imageUrl or user.profilePhoto,
             "role": staff.role or user.role,
-            "experience": staff.experience or getattr(user, "experience", 0),
-            "description": staff.description or getattr(user, "about", ""),
+            "experience": staff.experience if staff.experience is not None else getattr(user, "experience", 0),
+            "description": staff.description if staff.description is not None else getattr(user, "about", ""),
             "workPhotos": [p.url for p in staff.work_photo_rows],  # No fallback - return empty list if none
             "rating": staff.rating,
             "reviewsCount": staff.reviewsCount,
@@ -416,7 +436,7 @@ def create_booking(booking_data: dict):
     finally:
         db.close()
 
-def get_bookings(customer_id=None, staff_id=None, shop_id=None, status=None):
+def get_bookings(customer_id=None, staff_id=None, shop_id=None, status=None, limit=None):
     db = get_db_session()
     try:
         query = db.query(models.Booking, models.User).join(models.User, models.Booking.customerId == models.User.id)
@@ -424,6 +444,12 @@ def get_bookings(customer_id=None, staff_id=None, shop_id=None, status=None):
         if staff_id: query = query.filter(models.Booking.staffId == staff_id)
         if shop_id: query = query.filter(models.Booking.shopId == shop_id)
         if status: query = query.filter(models.Booking.status == status)
+        
+        # Sort by date and time (newest first) to make the limit meaningful
+        query = query.order_by(models.Booking.date.desc(), models.Booking.timeSlot.desc())
+        
+        if limit:
+            query = query.limit(limit)
         
         results = query.all()
         bookings_with_customers = []

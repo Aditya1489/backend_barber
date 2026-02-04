@@ -120,10 +120,11 @@ async def get_bookings_route(
     customer_id: Optional[str] = Query(None),
     staff_id: Optional[str] = Query(None),
     shop_id: Optional[str] = Query(None),
-    status: Optional[str] = Query(None)
+    status: Optional[str] = Query(None),
+    limit: Optional[int] = Query(None)
 ):
     """Get bookings with optional filters"""
-    return get_bookings(customer_id, staff_id, shop_id, status)
+    return get_bookings(customer_id, staff_id, shop_id, status, limit)
 
 @router.get("/{booking_id}", response_model=BookingResponse)
 async def get_booking_route(booking_id: str):

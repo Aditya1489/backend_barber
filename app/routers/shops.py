@@ -352,8 +352,12 @@ async def update_staff_profile_route(staff_id: str, data: UpdateStaffProfileRequ
     user_updates = {}
     if data.name: user_updates["name"] = data.name
     if data.phone: user_updates["phone"] = data.phone
-    if data.profilePhoto is not None: user_updates["profilePhoto"] = data.profilePhoto  # Allow empty string to remove photo
+    if data.profilePhoto is not None: user_updates["profilePhoto"] = data.profilePhoto
     if data.portfolio: user_updates["portfolio"] = data.portfolio
+    
+    # Sync professional fields to user table for redundancy/consistency
+    if data.experience is not None: user_updates["experience"] = data.experience
+    if data.description: user_updates["about"] = data.description
     
     if user_updates:
         print(f"[UPDATE_STAFF_PROFILE] Updating user table: {user_updates}")
