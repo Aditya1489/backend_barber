@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     POSTGRES_USER: str = "postgres"
     POSTGRES_PASSWORD: str = "aditya123"
     POSTGRES_DB: str = "barbersync"
+    
+    # Optional field, but database.py resolves authority via os.environ directly
     DATABASE_URL: Optional[str] = None
 
     class Config:
