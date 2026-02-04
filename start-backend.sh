@@ -33,19 +33,25 @@ fi
 echo -e "${GREEN}✓${NC} Python 3 found: $(python3 --version)"
 
 # Check if PostgreSQL is running
-echo -e "\n${BLUE}Checking PostgreSQL connection...${NC}"
-if command -v psql &> /dev/null; then
-    if psql -h localhost -U postgres -d barbersync -c "SELECT 1;" &> /dev/null; then
-        echo -e "${GREEN}✓${NC} PostgreSQL database 'barbersync' is accessible"
+# MODIFICATION: Skip local check if DATABASE_URL is set (Production mode)
+if [ -z "$DATABASE_URL" ]; then
+    echo -e "\n${BLUE}Checking LOCAL PostgreSQL connection...${NC}"
+    if command -v psql &> /dev/null; then
+        if psql -h localhost -U postgres -d barbersync -c "SELECT 1;" &> /dev/null; then
+            echo -e "${GREEN}✓${NC} Local PostgreSQL database 'barbersync' is accessible"
+        else
+            echo -e "${YELLOW}⚠${NC} Warning: Cannot connect to local PostgreSQL database 'barbersync'"
+            echo -e "${YELLOW}  Make sure local PostgreSQL is running and the database exists${NC}"
+            echo -e "${YELLOW}  Database: barbersync${NC}"
+            echo -e "${YELLOW}  User: postgres${NC}"
+            echo -e "${YELLOW}  You can create it with: createdb -U postgres barbersync${NC}\n"
+        fi
     else
-        echo -e "${YELLOW}⚠${NC} Warning: Cannot connect to PostgreSQL database 'barbersync'"
-        echo -e "${YELLOW}  Make sure PostgreSQL is running and the database exists${NC}"
-        echo -e "${YELLOW}  Database: barbersync${NC}"
-        echo -e "${YELLOW}  User: postgres${NC}"
-        echo -e "${YELLOW}  You can create it with: createdb -U postgres barbersync${NC}\n"
+        echo -e "${YELLOW}⚠${NC} Warning: psql command not found. Cannot verify local database connection"
     fi
 else
-    echo -e "${YELLOW}⚠${NC} Warning: psql command not found. Cannot verify database connection"
+    echo -e "\n${GREEN}✓${NC} Found PRODUCTION DATABASE_URL environment variable"
+    echo -e "${GREEN}  Skipping local PostgreSQL check as per configuration priority${NC}"
 fi
 
 # Create virtual environment if it doesn't exist
@@ -79,8 +85,10 @@ fi
 
 # Check if .env file exists
 if [ ! -f "$BACKEND_DIR/.env" ]; then
-    echo -e "\n${YELLOW}⚠${NC} Warning: .env file not found"
-    echo -e "${YELLOW}  Using default configuration from config.py${NC}"
+    if [ -z "$DATABASE_URL" ]; then
+        echo -e "\n${YELLOW}⚠${NC} Warning: .env file not found"
+        echo -e "${YELLOW}  Using default configuration from config.py${NC}"
+    fi
 fi
 
 # Start the server
@@ -101,4 +109,6 @@ echo -e "${BLUE}======================================${NC}\n"
 cd "$BACKEND_DIR"
 
 # Start uvicorn server
+# NOTE: uvicorn is run with --reload only in local dev (implied by script usage)
+# In production, Render usually runs the command directly from the dashboard.
 uvicorn app.main:app --host "$HOST" --port "$PORT" --reload
