@@ -56,6 +56,19 @@ class UserRepository(BaseRepository):
                         setattr(user, key, value)
                 db.commit()
                 db.refresh(user)
+
+                # TRIGGER SYNC: If user is a BARBER, sync to staff_profiles
+                if (user.role == "BARBER" or getattr(user, "role") == "BARBER"):
+                    # Use local import to avoid circular dependency
+                    from app.repositories.shop_repository import StaffProfileRepository
+                    
+                    # Fields that need syncing
+                    sync_fields = ["experience", "about", "portfolio", "profilePhoto"]
+                    sync_data = {k: v for k, v in update_data.items() if k in sync_fields}
+                    
+                    if sync_data:
+                        StaffProfileRepository.update(user_id, sync_data)
+
                 return {c.name: getattr(user, c.name) for c in user.__table__.columns}
             return None
 

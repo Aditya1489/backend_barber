@@ -280,33 +280,29 @@ class StaffProfileRepository(BaseRepository):
             ).first()
             
             if staff:
-                # Handle work photos
-                if "workPhotos" in update_data:
-                    photos = update_data.pop("workPhotos")
-                    if isinstance(photos, list):
-                        db.query(models.StaffWorkPhoto).filter(
-                            models.StaffWorkPhoto.staffId == staff.id
-                        ).delete()
-                        for url in photos:
-                            if isinstance(url, str):
-                                db.add(models.StaffWorkPhoto(staffId=staff.id, url=url))
+                # Handle field mapping from User to StaffProfile
+                if "about" in update_data:
+                    update_data["description"] = update_data.pop("about")
                 
-                # Handle services
-                if "services" in update_data:
-                    service_ids = update_data.pop("services")
-                    if isinstance(service_ids, list):
-                        db.query(models.StaffService).filter(
-                            models.StaffService.staffId == staff.id
-                        ).delete()
-                        for sid in service_ids:
-                            if isinstance(sid, str):
-                                db.add(models.StaffService(staffId=staff.id, serviceId=sid))
-                
+                # Check for experience directly or via User
+                if "experience" in update_data:
+                    staff.experience = update_data.pop("experience")
+
+                # Handle portfolio sync for existing staff
+                portfolio = update_data.pop("portfolio", None) or update_data.pop("workPhotos", None)
+                if portfolio is not None and isinstance(portfolio, list):
+                    db.query(models.StaffWorkPhoto).filter(
+                        models.StaffWorkPhoto.staffId == staff.id
+                    ).delete()
+                    for url in portfolio:
+                        db.add(models.StaffWorkPhoto(staffId=staff.id, url=url))
+
                 for key, value in update_data.items():
                     if hasattr(staff, key):
                         setattr(staff, key, value)
                 db.commit()
                 db.refresh(staff)
+                return {c.name: getattr(staff, c.name) for c in staff.__table__.columns}
             else:
                 # Create new staff profile if not exists
                 user = db.query(models.User).filter(models.User.id == staff_id).first()
@@ -317,14 +313,25 @@ class StaffProfileRepository(BaseRepository):
                     userId=user.id,
                     name=user.name,
                     experience=update_data.get("experience", 0),
-                    description=update_data.get("description", ""),
-                    imageUrl=update_data.get("imageUrl") or user.profilePhoto,
+                    description=update_data.get("about") or update_data.get("description", ""),
+                    imageUrl=update_data.get("imageUrl") or update_data.get("profilePhoto") or user.profilePhoto,
                     role=update_data.get("role", "Barber")
                 )
                 db.add(new_staff)
                 db.commit()
                 db.refresh(new_staff)
                 staff = new_staff
+                
+                # Handle nested data for new profile
+                if "workPhotos" in update_data:
+                    for url in update_data["workPhotos"]:
+                        db.add(models.StaffWorkPhoto(staffId=staff.id, url=url))
+                elif "portfolio" in update_data:
+                    for url in update_data["portfolio"]:
+                        db.add(models.StaffWorkPhoto(staffId=staff.id, url=url))
+                
+                db.commit()
+                db.refresh(staff)
                 
                 res = {c.name: getattr(staff, c.name) for c in staff.__table__.columns}
                 res["workPhotos"] = [p.url for p in staff.work_photo_rows]
