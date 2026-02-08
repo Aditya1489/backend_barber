@@ -38,10 +38,12 @@ class UserRepository(BaseRepository):
     @classmethod
     def create(cls, user_data: dict):
         """Create a new user."""
+        print(f"DEBUG: UserRepository.create called with data: {user_data}")
         with cls.get_session() as db:
             user = models.User(**user_data)
             db.add(user)
             db.commit()
+            print(f"DEBUG: UserRepository.create committed for user: {user.email}")
             db.refresh(user)
             return {c.name: getattr(user, c.name) for c in user.__table__.columns}
     

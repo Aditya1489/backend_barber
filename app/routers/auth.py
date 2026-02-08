@@ -38,6 +38,7 @@ class GoogleAuthRequest(BaseModel):
 @router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
 async def register(data: RegisterRequest):
     """Register a new user"""
+    print(f"DEBUG: Registration attempt for email: {data.email}, role: {data.role}")
     
     # Check if user already exists
     existing_user_email = get_user_by_email(data.email)

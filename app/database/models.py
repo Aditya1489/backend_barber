@@ -17,6 +17,7 @@ class User(Base):
     password = Column(String, nullable=False)
     role = Column(String, nullable=False) # CUSTOMER, OWNER, BARBER
     profilePhoto = Column(String, nullable=True)
+    fcmToken = Column(String, nullable=True)
     permissions = Column(JSON, default={})
     createdAt = Column(DateTime, default=datetime.utcnow)
     
@@ -66,6 +67,10 @@ class Staff(Base):
     imageUrl = Column(String, nullable=True)
     description = Column(String, nullable=True)
     skills = Column(String, nullable=True)  # Comma-separated skill names
+    workingDays = Column(JSON, default=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"])  # Default Mon-Sat
+    workingHours = Column(JSON, default={}) # {"Mon": {"start": "09:00", "end": "18:00"}, ...}
+    bufferTime = Column(Integer, default=0) # In minutes
+    isAvailable = Column(Boolean, default=True) # For "Not working today" state
     # workPhotos moved to StaffWorkPhoto table
     # services moved to StaffService table
     
@@ -98,11 +103,17 @@ class Booking(Base) :
     services = Column(JSON, default=[]) # List of service IDs or objects
     date = Column(String, nullable=False) # Store as string for now to match old logic or DateTime
     timeSlot = Column(String, nullable=False)
-    status = Column(String, default="PENDING") # PENDING, CONFIRMED, CANCELLED, COMPLETED
+    status = Column(String, default="PENDING") # INITIATED, PENDING, AWAITING_CUSTOMER_CONFIRMATION, CONFIRMED, IN_PROGRESS, COMPLETED, CANCELLED_BY_CUSTOMER, CANCELLED_BY_BARBER, NO_SHOW, EXPIRED
+    isPaidConfirmation = Column(Boolean, default=False)
+    expiresAt = Column(DateTime, nullable=True) # For TTL after acceptance
     totalAmount = Column(Float, nullable=False)
     totalDuration = Column(Integer, nullable=True) # In minutes
     bookedAt = Column(DateTime, default=datetime.utcnow)
     notes = Column(String, nullable=True)
+    idempotencyKey = Column(String, nullable=True, unique=True)
+    reminded24h = Column(Boolean, default=False)
+    reminded2h = Column(Boolean, default=False)
+    reminded15m = Column(Boolean, default=False)
 
 class Review(Base):
     __tablename__ = "reviews"
@@ -129,6 +140,23 @@ class Notification(Base):
     data = Column(JSON, default={})
     isRead = Column(Boolean, default=False)
     createdAt = Column(DateTime, default=datetime.utcnow)
+
+class AuditLog(Base):
+    """Immutable audit trail for owner supervision"""
+    __tablename__ = "audit_logs"
+    
+    id = Column(String, primary_key=True, default=generate_uuid)
+    timestamp = Column(DateTime, default=datetime.utcnow, nullable=False)
+    actorId = Column(String, nullable=True)  # Who performed the action (userId or 'SYSTEM')
+    actorRole = Column(String, nullable=True)  # OWNER, BARBER, CUSTOMER, SYSTEM
+    actionType = Column(String, nullable=False)  # booking_override, price_change, staff_disable, etc.
+    entityType = Column(String, nullable=False)  # booking, service, staff, shop
+    entityId = Column(String, nullable=False)
+    details = Column(JSON, nullable=True)  # Additional context (old/new values, etc.)
+    reason = Column(String, nullable=True)  # User-provided reason for the action
+    shopId = Column(String, ForeignKey("shops.id"), nullable=True)  # For filtering by shop
+    createdAt = Column(DateTime, default=datetime.utcnow)
+
 
 class ShopPhoto(Base):
     __tablename__ = "shop_photos"

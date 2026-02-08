@@ -49,6 +49,8 @@ from app.repositories import (
     create_notification,
     get_notifications,
     mark_notification_read,
+    # Repository classes
+    BookingRepository,
 )
 
 # Keep the session helper for any code that still needs direct DB access

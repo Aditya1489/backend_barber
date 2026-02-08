@@ -78,6 +78,10 @@ class UpdateStaffProfileRequest(BaseModel):
     portfolio: Optional[List[str]] = None
     services: Optional[List[str]] = None  # List of service IDs
     skills: Optional[str] = None  # Comma-separated skill names
+    workingDays: Optional[List[str]] = None
+    workingHours: Optional[dict] = None
+    bufferTime: Optional[int] = None
+    isAvailable: Optional[bool] = None
 
 # Routes
 @router.get("/", response_model=List[dict])
@@ -375,6 +379,8 @@ async def update_staff_profile_route(staff_id: str, data: UpdateStaffProfileRequ
     if data.skills is not None: 
         staff_updates["skills"] = data.skills
         print(f"[UPDATE_STAFF_PROFILE] skills to update: {data.skills}")
+    
+    if data.isAvailable is not None: staff_updates["isAvailable"] = data.isAvailable
     
     if staff_updates:
         print(f"[UPDATE_STAFF_PROFILE] Updating staff table: {staff_updates}")

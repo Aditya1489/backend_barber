@@ -18,10 +18,11 @@ def resolve_database_url():
     
     The SQLAlchemy engine MUST be created ONLY after this decision is made.
     """
-    # 1. Check direct environment variable first (Authoritative for Render/Neon)
+    # 1. Check if we are on Render (Production)
+    on_render = os.environ.get("RENDER") == "true"
     database_url = os.environ.get("DATABASE_URL")
     
-    if database_url:
+    if on_render and database_url:
         # SQLAlchemy 1.4+ requires postgresql:// instead of postgres://
         if database_url.startswith("postgres://"):
             database_url = database_url.replace("postgres://", "postgresql://", 1)

@@ -19,6 +19,19 @@ class BookingRepository(BaseRepository):
             return {c.name: getattr(booking, c.name) for c in booking.__table__.columns}
     
     @classmethod
+    def check_customer_overlap(cls, customer_id: str, date: str, time_slot: str):
+        """Check if a customer has an overlapping active booking."""
+        with cls.get_session() as db:
+            active_statuses = ["AWAITING_CUSTOMER_CONFIRMATION", "CONFIRMED", "IN_PROGRESS", "PENDING"]
+            overlap = db.query(models.Booking).filter(
+                models.Booking.customerId == customer_id,
+                models.Booking.date == date,
+                models.Booking.timeSlot == time_slot,
+                models.Booking.status.in_(active_statuses)
+            ).first()
+            return overlap is not None
+    
+    @classmethod
     def get_all(cls, customer_id=None, staff_id=None, shop_id=None, status=None, limit=None):
         """Get bookings with optional filters."""
         with cls.get_session() as db:

@@ -268,6 +268,10 @@ class StaffProfileRepository(BaseRepository):
                 "reviewsCount": staff.reviewsCount,
                 "services": [s.id for s in staff.service_objs] if staff.service_objs else [],
                 "skills": staff.skills or "",
+                "workingDays": staff.workingDays,
+                "workingHours": staff.workingHours,
+                "bufferTime": staff.bufferTime,
+                "isAvailable": staff.isAvailable,
                 "shop": shop
             }
     
@@ -315,7 +319,11 @@ class StaffProfileRepository(BaseRepository):
                     experience=update_data.get("experience", 0),
                     description=update_data.get("about") or update_data.get("description", ""),
                     imageUrl=update_data.get("imageUrl") or update_data.get("profilePhoto") or user.profilePhoto,
-                    role=update_data.get("role", "Barber")
+                    role=update_data.get("role", "Barber"),
+                    workingDays=update_data.get("workingDays", ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]),
+                    workingHours=update_data.get("workingHours", {}),
+                    bufferTime=update_data.get("bufferTime", 0),
+                    isAvailable=update_data.get("isAvailable", True)
                 )
                 db.add(new_staff)
                 db.commit()

@@ -2,6 +2,9 @@ from fastapi import APIRouter, HTTPException, status, Query
 from pydantic import BaseModel
 from typing import List, Optional, Dict
 from app.db import get_bookings, get_all_hydrated_shops, get_user_by_id
+from app.database.database import SessionLocal
+from app.database import models
+from sqlalchemy import func, desc, case
 
 router = APIRouter(prefix="/analytics", tags=["analytics"])
 
@@ -26,78 +29,122 @@ class ShopAnalytics(BaseModel):
 
 # Specific analytics routes
 @router.get("/owner/{owner_id}", response_model=ShopAnalytics)
-async def get_owner_analytics(
-    owner_id: str,
-    period: str = Query("daily", pattern="^(daily|weekly|monthly|yearly)$"),
-    shop_id: Optional[str] = None
-):
     """Get comprehensive analytics for an owner's shop(s)"""
     
-    # 1. Find all shops owned by this user
-    all_shops = get_all_hydrated_shops()
-    owned_shops = [s for s in all_shops if s.get("ownerId") == owner_id]
-    
-    if not owned_shops:
-        # Check if user is an owner
-        user = get_user_by_id(owner_id)
-        if not user or user.get("role") != "OWNER":
-            raise HTTPException(status_code=404, detail="Owner not found or user is not an owner")
+    db = SessionLocal()
+    try:
+        # 1. Find all shops owned by this user
+        shops_query = db.query(models.Shop).filter(models.Shop.ownerId == owner_id)
+        if shop_id:
+            shops_query = shops_query.filter(models.Shop.id == shop_id)
         
+        owned_shops = shops_query.all()
+        
+        if not owned_shops:
+             # Check if user is an owner (only if no shops found to be sure)
+            user = db.query(models.User).filter(models.User.id == owner_id).first()
+            if not user or user.role != "OWNER":
+                raise HTTPException(status_code=404, detail="Owner not found or user is not an owner")
+            
+            return ShopAnalytics(
+                totalAppointments=0, pendingCount=0, acceptedCount=0,
+                completedCount=0, cancelledCount=0, totalRevenue=0.0,
+                staffPerformance=[]
+            )
+
+        shop_ids = [s.id for s in owned_shops]
+        
+        # 2. Aggregated Counts via SQL
+        # Status counts
+        status_counts = db.query(
+            models.Booking.status, 
+            func.count(models.Booking.id)
+        ).filter(
+            models.Booking.shopId.in_(shop_ids)
+        ).group_by(models.Booking.status).all()
+        
+        counts = {status: count for status, count in status_counts}
+        
+        total_appointments = sum(counts.values())
+        pending = counts.get("PENDING", 0)
+        accepted = counts.get("ACCEPTED", 0) + counts.get("AWAITING_CUSTOMER_CONFIRMATION", 0) + counts.get("CONFIRMED", 0) # Grouping "active" statuses as accepted for this view if needed, or just specific ones? 
+        # The prompt implies specific fields: pending, accepted, completed, cancelled.
+        # Let's map strict statuses
+        accepted = counts.get("ACCEPTED", 0) # If 'ACCEPTED' is a valid status. Based on bookings.py, it's AWAITING_CUSTOMER_CONFIRMATION or CONFIRMED.
+        # Let's check the schema in previous turns or infer. bookings.py uses AWAITING_CUSTOMER_CONFIRMATION, CONFIRMED, IN_PROGRESS.
+        # I'll sum up the positive ones for "acceptedCount"
+        accepted = (
+            counts.get("AWAITING_CUSTOMER_CONFIRMATION", 0) + 
+            counts.get("CONFIRMED", 0) + 
+            counts.get("IN_PROGRESS", 0)
+        )
+        
+        completed_count = counts.get("COMPLETED", 0)
+        cancelled = (
+            counts.get("CANCELLED", 0) + 
+            counts.get("CANCELLED_BY_CUSTOMER", 0) + 
+            counts.get("CANCELLED_BY_BARBER", 0) +
+            counts.get("NO_SHOW", 0) + 
+            counts.get("EXPIRED", 0)
+        )
+
+        # Revenue
+        revenue_query = db.query(func.sum(models.Booking.totalAmount)).filter(
+            models.Booking.shopId.in_(shop_ids),
+            models.Booking.status == "COMPLETED"
+        ).scalar()
+        total_revenue = revenue_query or 0.0
+
+        # 3. Staff Performance (Aggregated)
+        # Group by staffId, count total, count completed, sum revenue
+        staff_stats_query = db.query(
+            models.Booking.staffId,
+            func.count(models.Booking.id).label('total'),
+            func.sum(case((models.Booking.status == 'COMPLETED', 1), else_=0)).label('completed'),
+            func.sum(case((models.Booking.status.in_(['CANCELLED', 'CANCELLED_BY_CUSTOMER', 'CANCELLED_BY_BARBER', 'NO_SHOW']), 1), else_=0)).label('rejected'),
+            func.sum(case((models.Booking.status == 'COMPLETED', models.Booking.totalAmount), else_=0)).label('revenue')
+        ).filter(
+            models.Booking.shopId.in_(shop_ids)
+        ).group_by(models.Booking.staffId).all()
+        
+        # Need to fetch staff names. 
+        # We can join with User table if Booking has specific relation, or just query users.
+        # Assuming Booking doesn't have a direct relationship property set up in ORM for join (it might, but safety first since I didn't see models.py fully).
+        # I will fetch all relevant staff users in one go.
+        
+        staff_ids_in_stats = [s[0] for s in staff_stats_query]
+        staff_users = {}
+        if staff_ids_in_stats:
+            users = db.query(models.User).filter(models.User.id.in_(staff_ids_in_stats)).all()
+            staff_users = {u.id: u for u in users}
+
+        staff_performance = []
+        for s in staff_stats_query:
+            sid, total, comp, rej, rev = s
+            user = staff_users.get(sid)
+            name = user.name if user else "Unknown Staff"
+            
+            staff_performance.append(StaffPerformance(
+                staffId=sid,
+                staffName=name,
+                totalAppointments=total,
+                completedAppointments=comp,
+                rejectedAppointments=rej,
+                totalEarnings=rev or 0.0,
+                averageRating=4.8 
+            ))
+
         return ShopAnalytics(
-            totalAppointments=0, pendingCount=0, acceptedCount=0,
-            completedCount=0, cancelledCount=0, totalRevenue=0.0,
-            staffPerformance=[]
+            totalAppointments=total_appointments,
+            pendingCount=pending,
+            acceptedCount=accepted,
+            completedCount=completed_count,
+            cancelledCount=cancelled,
+            totalRevenue=total_revenue,
+            staffPerformance=staff_performance
         )
-
-    # 2. Filter bookings based on owned shops
-    target_shop_ids = [shop_id] if shop_id else [s["id"] for s in owned_shops]
-    
-    # Get all bookings (we'll filter them)
-    # Ideally we'd have a more targeted get_bookings helper
-    all_bookings = []
-    for sid in target_shop_ids:
-        all_bookings.extend(get_bookings(shop_id=sid))
-    
-    # De-duplicate just in case
-    bookings = {b["id"]: b for b in all_bookings}.values()
-    
-    completed = [b for b in bookings if b["status"] == "COMPLETED"]
-    
-    # 3. Staff Performance Calculation
-    staff_stats = {}
-    staff_ids = []
-    for s in owned_shops:
-        if not shop_id or s["id"] == shop_id:
-            for staff in s.get("staff", []):
-                staff_ids.append(staff["id"])
-    
-    for s_id in set(staff_ids):
-        staff_user = get_user_by_id(s_id)
-        staff_name = staff_user["name"] if staff_user else "Unknown Staff"
-        
-        s_bookings = [b for b in bookings if b["staffId"] == s_id]
-        s_completed = [b for b in s_bookings if b["status"] == "COMPLETED"]
-        s_rejected = [b for b in s_bookings if b["status"] == "CANCELLED"]
-        
-        staff_stats[s_id] = StaffPerformance(
-            staffId=s_id,
-            staffName=staff_name,
-            totalAppointments=len(s_bookings),
-            completedAppointments=len(s_completed),
-            rejectedAppointments=len(s_rejected),
-            totalEarnings=sum(b["totalAmount"] for b in s_completed),
-            averageRating=4.8 # mock rating until we have actual ratings in staff
-        )
-
-    return ShopAnalytics(
-        totalAppointments=len(bookings),
-        pendingCount=len([b for b in bookings if b["status"] == "PENDING"]),
-        acceptedCount=len([b for b in bookings if b["status"] == "ACCEPTED"]),
-        completedCount=len(completed),
-        cancelledCount=len([b for b in bookings if b["status"] == "CANCELLED"]),
-        totalRevenue=sum(b["totalAmount"] for b in completed),
-        staffPerformance=list(staff_stats.values())
-    )
+    finally:
+        db.close()
 
 @router.get("/staff/{staff_id}/earnings")
 async def get_staff_earnings(
