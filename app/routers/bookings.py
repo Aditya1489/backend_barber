@@ -271,17 +271,18 @@ async def update_booking_status_route(booking_id: str, new_status: str):
     # --- AUDIT LOGGING ---
     try:
         from app.database.database import SessionLocal
-        from app.database import models
+        from app.routers.owner import create_audit_log
         db_session = SessionLocal()
-        audit = models.AuditLog(
-            action="STATUS_CHANGE",
-            entityType="BOOKING",
-            entityId=booking_id,
-            oldValue={"status": booking["status"]},
-            newValue={"status": new_status}
+        create_audit_log(
+            db=db_session,
+            actor_id=None, # System
+            actor_role="SYSTEM",
+            action_type="status_change",
+            entity_type="booking",
+            entity_id=booking_id,
+            details={"oldStatus": booking["status"], "newStatus": new_status},
+            shop_id=booking["shopId"]
         )
-        db_session.add(audit)
-        db_session.commit()
         db_session.close()
     except Exception as e:
         print(f"[AUDIT] Error: {e}")
@@ -391,17 +392,18 @@ async def override_booking(booking_id: str, owner_id: str, reason: str, new_stat
         updated = update_booking(booking_id, {"status": new_status})
         
         # 3. Create Audit Log
-        audit = models.AuditLog(
-            userId=owner_id,
-            action="OWNER_OVERRIDE",
-            entityType="BOOKING",
-            entityId=booking_id,
-            oldValue={"status": old_status},
-            newValue={"status": new_status},
-            reason=reason
+        from app.routers.owner import create_audit_log
+        create_audit_log(
+            db=db,
+            actor_id=owner_id,
+            actor_role="OWNER",
+            action_type="booking_override",
+            entity_type="booking",
+            entity_id=booking_id,
+            details={"oldStatus": old_status, "newStatus": new_status},
+            reason=reason,
+            shop_id=booking["shopId"]
         )
-        db.add(audit)
-        db.commit()
         
         # 4. Notify affected parties
         create_notification({

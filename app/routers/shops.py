@@ -205,14 +205,33 @@ async def delete_shop_route(shop_id: str):
 
 @router.get("/{shop_id}/staff", response_model=List[dict])
 async def get_shop_staff(shop_id: str):
-    """Get all staff members for a shop"""
+    """Get all staff members for a shop with their actual profile photos"""
+    from app.db import get_staff_full_profile
+    
     shop = get_hydrated_shop(shop_id)
     if not shop:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Shop not found"
         )
-    return shop.get("staff", [])
+    
+    # Get staff list from shop
+    staff_list = shop.get("staff", [])
+    
+    # Enrich each staff member with their actual profile data
+    enriched_staff = []
+    for staff_member in staff_list:
+        staff_id = staff_member.get("id")
+        if staff_id:
+            # Fetch full profile to get actual imageUrl
+            full_profile = get_staff_full_profile(staff_id)
+            if full_profile:
+                # Use actual profile photo, fallback to shop's staff data
+                staff_member["imageUrl"] = full_profile.get("imageUrl", staff_member.get("imageUrl", "https://picsum.photos/200/200"))
+                staff_member["name"] = full_profile.get("name", staff_member.get("name"))
+        enriched_staff.append(staff_member)
+    
+    return enriched_staff
 
 @router.post("/{shop_id}/staff-create")
 async def create_staff_for_shop(shop_id: str, staff_data: CreateStaffRequest):
@@ -262,6 +281,48 @@ async def get_shop_services(shop_id: str):
         raise HTTPException(status_code=404, detail="Shop not found")
     return shop.get("services", [])
 
+@router.get("/{shop_id}/services/popular", response_model=List[dict])
+async def get_popular_services(shop_id: str):
+    """Get services sorted by booking frequency (most popular first)"""
+    from app.database.database import SessionLocal
+    from app.database import models
+    from collections import Counter
+    
+    # Verify shop exists
+    shop = get_hydrated_shop(shop_id)
+    if not shop:
+        raise HTTPException(status_code=404, detail="Shop not found")
+    
+    db = SessionLocal()
+    try:
+        # Get all bookings for this shop
+        bookings = db.query(models.Booking).filter(
+            models.Booking.shopId == shop_id,
+            models.Booking.status.in_(["CONFIRMED", "COMPLETED", "IN_PROGRESS"])
+        ).all()
+        
+        # Count service frequency
+        service_counter = Counter()
+        for booking in bookings:
+            if booking.services:
+                # services is a JSON array of service IDs
+                for service_id in booking.services:
+                    service_counter[service_id] += 1
+        
+        # Get all services and add booking counts
+        services = shop.get("services", [])
+        for service in services:
+            service["bookingCount"] = service_counter.get(service["id"], 0)
+        
+        # Sort by booking count (descending), then by name for stable sort
+        services.sort(key=lambda s: (-s["bookingCount"], s["name"]))
+        
+        return services
+        
+    finally:
+        db.close()
+
+
 @router.post("/{shop_id}/services")
 async def add_service_to_shop(shop_id: str, service: AddServiceRequest):
     """Add a new service to a shop"""
@@ -274,16 +335,76 @@ async def add_service_to_shop(shop_id: str, service: AddServiceRequest):
 @router.put("/{shop_id}/services/{service_id}")
 async def update_service_route(shop_id: str, service_id: str, service_data: UpdateServiceRequest):
     """Update a service details"""
+    from app.database.database import get_db
+    from app.routers.owner import create_audit_log
+    
+    # Get the service before update to compare changes
+    shop = get_hydrated_shop(shop_id)
+    old_service = None
+    if shop and 'services' in shop:
+        old_service = next((s for s in shop['services'] if s.get('id') == service_id), None)
+    
+    # Update the service
     data = service_data.model_dump(exclude_unset=True)
     updated = update_service(service_id, data)
     if not updated:
         raise HTTPException(status_code=404, detail="Service not found")
+    
+    # Create audit log for price changes
+    if old_service and 'price' in data and old_service.get('price') != data['price']:
+        db_gen = get_db()
+        db = next(db_gen)
+        try:
+            create_audit_log(
+                db=db,
+                actor_id=shop.get('ownerId'),
+                actor_role="OWNER",
+                action_type="price_change",
+                entity_type="service",
+                entity_id=service_id,
+                details={
+                    "serviceName": old_service.get('name'),
+                    "oldPrice": old_service.get('price'),
+                    "newPrice": data['price']
+                },
+                shop_id=shop_id
+            )
+        finally:
+            db.close()
+    
     return updated
 
 @router.delete("/{shop_id}/services/{service_id}")
 async def delete_shop_service(shop_id: str, service_id: str):
     """Delete a service from a shop"""
+    from app.database.database import get_db
+    from app.routers.owner import create_audit_log
+    
+    # Get service info before deletion for logging
+    shop = get_hydrated_shop(shop_id)
+    service_name = "Unknown"
+    if shop and 'services' in shop:
+        service = next((s for s in shop['services'] if s.get('id') == service_id), None)
+        if service:
+            service_name = service.get('name', "Unknown")
+
     if delete_service(service_id):
+        # Log the deletion
+        db_gen = get_db()
+        db = next(db_gen)
+        try:
+            create_audit_log(
+                db=db,
+                actor_id=shop.get('ownerId') if shop else None,
+                actor_role="OWNER",
+                action_type="service_delete",
+                entity_type="service",
+                entity_id=service_id,
+                details={"serviceName": service_name},
+                shop_id=shop_id
+            )
+        finally:
+            db.close()
         return {"message": "Service removed successfully"}
     raise HTTPException(status_code=404, detail="Service not found")
 
@@ -381,6 +502,25 @@ async def update_staff_profile_route(staff_id: str, data: UpdateStaffProfileRequ
         print(f"[UPDATE_STAFF_PROFILE] skills to update: {data.skills}")
     
     if data.isAvailable is not None: staff_updates["isAvailable"] = data.isAvailable
+
+    if data.isAvailable is not None and profile.get("isAvailable") != data.isAvailable:
+        from app.database.database import get_db
+        from app.routers.owner import create_audit_log
+        db_gen = get_db()
+        db = next(db_gen)
+        try:
+            create_audit_log(
+                db=db,
+                actor_id=None, # System or staff themselves
+                actor_role="BARBER",
+                action_type="staff_disable" if not data.isAvailable else "staff_enable",
+                entity_type="staff",
+                entity_id=real_staff_id,
+                details={"staffName": profile.get("name"), "status": "unavailable" if not data.isAvailable else "available"},
+                shop_id=profile.get("shopId")
+            )
+        finally:
+            db.close()
     
     if staff_updates:
         print(f"[UPDATE_STAFF_PROFILE] Updating staff table: {staff_updates}")
@@ -389,5 +529,23 @@ async def update_staff_profile_route(staff_id: str, data: UpdateStaffProfileRequ
         if not updated_staff:
              # If doesn't exist, we might need to create it
              pass
+    
+    # 3. Update Shop's Staff Array (so Staff Management shows correct photos)
+    if data.profilePhoto is not None and profile.get("shopId"):
+        from app.db import get_shop, update_shop
+        shop = get_shop(profile["shopId"])
+        if shop and "staff" in shop:
+            # Find and update this staff member in the shop's staff array
+            staff_array = shop["staff"]
+            for i, staff_member in enumerate(staff_array):
+                if staff_member.get("id") == real_staff_id or staff_member.get("userId") == real_user_id:
+                    # Update the imageUrl in the shop's staff array
+                    staff_array[i]["imageUrl"] = data.profilePhoto
+                    if data.name:
+                        staff_array[i]["name"] = data.name
+                    break
+            # Save updated shop
+            update_shop(profile["shopId"], {"staff": staff_array})
+            print(f"[UPDATE_STAFF_PROFILE] Updated shop's staff array with new imageUrl")
     
     return {"message": "Staff profile updated successfully"}

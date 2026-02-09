@@ -7,7 +7,7 @@ from app.database.models import AuditLog, User, Shop, Booking, Staff
 from app.database.owner_models import OwnerSettings, StaffReliability
 from pydantic import BaseModel
 
-router = APIRouter(prefix="/api/owner", tags=["owner"])
+router = APIRouter(prefix="/owner", tags=["owner"])
 
 # ==================== PYDANTIC MODELS ====================
 

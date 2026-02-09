@@ -29,6 +29,11 @@ class ShopAnalytics(BaseModel):
 
 # Specific analytics routes
 @router.get("/owner/{owner_id}", response_model=ShopAnalytics)
+async def get_owner_analytics(
+    owner_id: str,
+    period: str = Query("daily", pattern="^(daily|weekly|monthly|yearly)$"),
+    shop_id: Optional[str] = None
+):
     """Get comprehensive analytics for an owner's shop(s)"""
     
     db = SessionLocal()
