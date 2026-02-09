@@ -92,6 +92,15 @@ if [ ! -f "$BACKEND_DIR/.env" ]; then
 fi
 
 # Start the server
+# Run database migrations
+echo -e "\n${BLUE}Running database migrations...${NC}"
+if [ -f "$BACKEND_DIR/alembic.ini" ]; then
+    alembic upgrade head
+    echo -e "${GREEN}✓${NC} Migrations applied successfully"
+else
+    echo -e "${YELLOW}⚠${NC} Warning: alembic.ini not found, skipping migrations"
+fi
+
 echo -e "\n${BLUE}======================================${NC}"
 echo -e "${GREEN}Starting BarberSync Backend Server...${NC}"
 echo -e "${BLUE}======================================${NC}"

@@ -14,15 +14,28 @@ class FCMService:
             return
         
         try:
-            # Look for service account key
+            # 1. Try environment variable (best for Render/Heroku)
+            firebase_creds_json = os.environ.get("FIREBASE_CREDENTIALS")
+            if firebase_creds_json:
+                try:
+                    creds_dict = json.loads(firebase_creds_json)
+                    cred = credentials.Certificate(creds_dict)
+                    firebase_admin.initialize_app(cred)
+                    cls._initialized = True
+                    print("🔥 Firebase Admin initialized via environment variable")
+                    return
+                except Exception as env_e:
+                    print(f"⚠️ Failed to parse FIREBASE_CREDENTIALS env var: {env_e}")
+
+            # 2. Try physical file
             key_path = "serviceAccountKey.json"
             if os.path.exists(key_path):
                 cred = credentials.Certificate(key_path)
                 firebase_admin.initialize_app(cred)
                 cls._initialized = True
-                print("🔥 Firebase Admin initialized successfully")
+                print("🔥 Firebase Admin initialized via serviceAccountKey.json")
             else:
-                print("⚠️ Warning: serviceAccountKey.json not found. Push notifications will be disabled.")
+                print("⚠️ Warning: serviceAccountKey.json or FIREBASE_CREDENTIALS env var not found. Push notifications will be disabled.")
         except Exception as e:
             print(f"❌ Firebase Admin initialization failed: {e}")
 
