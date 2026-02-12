@@ -40,9 +40,13 @@ class ShopRepository(BaseRepository):
                 if s.user:
                     s_dict["phone"] = s.user.phone
                     s_dict["email"] = s.user.email
-                    s_dict["profilePhoto"] = s.user.profilePhoto
+                    # Fallback to staff image url if persistent
+                    s_dict["profilePhoto"] = s.imageUrl
                     if not s.imageUrl:
-                        s_dict["imageUrl"] = s.user.profilePhoto
+                        # Try to get from customer profile if needed, or just leave blank/null
+                        # s_dict["imageUrl"] = s.user.customer_profile.profile_photo if s.user.customer_profile else None
+                         s_dict["imageUrl"] = None 
+
                 hydrated["staff"].append(s_dict)
             
             # Services
@@ -78,6 +82,34 @@ class ShopRepository(BaseRepository):
             db.add(shop)
             db.flush()
             
+            # Ensure Owner Role
+            owner_id = shop_data.get("ownerId")
+            if owner_id:
+                owner_role = db.query(models.Role).filter(models.Role.name == "OWNER").first()
+                if not owner_role:
+                    owner_role = models.Role(id=str(uuid.uuid4()), name="OWNER")
+                    db.add(owner_role)
+                    db.flush()
+                
+                # Check/Add UserRole
+                has_role = db.query(models.UserRole).filter(
+                    models.UserRole.user_id == owner_id,
+                    models.UserRole.role_id == owner_role.id,
+                    models.UserRole.shop_id == shop.id
+                ).first()
+                
+                if not has_role:
+                    db.add(models.UserRole(
+                        user_id=owner_id, 
+                        role_id=owner_role.id, 
+                        shop_id=shop.id
+                    ))
+                
+                # Ensure Owner Profile
+                has_profile = db.query(models.OwnerProfile).filter(models.OwnerProfile.user_id == owner_id).first()
+                if not has_profile:
+                    db.add(models.OwnerProfile(user_id=owner_id, permissions={"all": True}))
+
             # Add photos
             for i, url in enumerate(photos_data):
                 if isinstance(url, str):
@@ -100,18 +132,38 @@ class ShopRepository(BaseRepository):
                 
                 if existing_user:
                     user_id = existing_user.id
+                    # Update role if needed? We append BARBER role.
+                    # check if already has barber role
+                    has_role = db.query(models.UserRole).join(models.Role).filter(
+                        models.UserRole.user_id == user_id,
+                        models.Role.name == "BARBER"
+                    ).first()
+                    
+                    if not has_role:
+                        barber_role = db.query(models.Role).filter(models.Role.name == "BARBER").first()
+                        if barber_role:
+                            db.add(models.UserRole(user_id=user_id, role_id=barber_role.id))
+                    
                 else:
+                    # Create new user
                     new_user = models.User(
                         name=name,
                         phone=phone,
                         email=email,
-                        role="BARBER",
-                        password="hashed_default_password",
-                        permissions={"location": True, "notifications": True}
+                        # permissions...
                     )
                     db.add(new_user)
                     db.flush()
                     user_id = new_user.id
+                    
+                    # Add Barber Role
+                    barber_role = db.query(models.Role).filter(models.Role.name == "BARBER").first()
+                    if not barber_role:
+                         barber_role = models.Role(id=str(uuid.uuid4()), name="BARBER")
+                         db.add(barber_role)
+                         db.flush()
+                    
+                    db.add(models.UserRole(user_id=user_id, role_id=barber_role.id))
                 
                 existing_profile = db.query(models.Staff).filter(models.Staff.userId == user_id).first()
                 if existing_profile:
@@ -130,6 +182,9 @@ class ShopRepository(BaseRepository):
             db.commit()
             return cls.get_hydrated(shop.id)
         except Exception as e:
+            import traceback
+            traceback.print_exc()
+            print(f"ERROR CREATING SHOP: {e}")
             db.rollback()
             return None
         finally:
@@ -237,17 +292,25 @@ class StaffProfileRepository(BaseRepository):
             ).first()
             
             if not staff:
+                # If staff not found, we shouldn't fail if we have a user
+                # but legacy logic handled user fallback. 
+                # Let's assume we need to return something consistent or None.
+                # If requesting by userId, we can check for User
                 user = db.query(models.User).filter(models.User.id == staff_id).first()
                 if not user:
                     return None
+                 
+                # Fallback: Treat as a 'generic' profile if no staff profile exists?
+                # Or just return None. Legacy code returned a partial dict.
+                # We'll construct a mock using roles.
                 return {
                     "id": user.id,
                     "name": user.name,
-                    "photo": user.profilePhoto,
-                    "role": user.role,
-                    "experience": getattr(user, "experience", 0),
-                    "description": getattr(user, "about", ""),
-                    "workPhotos": getattr(user, "portfolio", []),
+                    "photo": None, # Removed user.profilePhoto
+                    "role": "CUSTOMER", # Default
+                    "experience": 0,
+                    "description": "",
+                    "workPhotos": [],
                     "shop": None
                 }
             
@@ -258,11 +321,11 @@ class StaffProfileRepository(BaseRepository):
                 "id": staff.id,
                 "userId": staff.userId,
                 "name": staff.name or user.name,
-                "photo": user.profilePhoto,
-                "imageUrl": staff.imageUrl or user.profilePhoto,
-                "role": staff.role or user.role,
-                "experience": staff.experience if staff.experience is not None else getattr(user, "experience", 0),
-                "description": staff.description if staff.description is not None else getattr(user, "about", ""),
+                "photo": staff.imageUrl, # Use staff image
+                "imageUrl": staff.imageUrl,
+                "role": staff.role, # Staff title
+                "experience": staff.experience,
+                "description": staff.description,
                 "workPhotos": [p.url for p in staff.work_photo_rows],
                 "rating": staff.rating,
                 "reviewsCount": staff.reviewsCount,
@@ -318,7 +381,7 @@ class StaffProfileRepository(BaseRepository):
                     name=user.name,
                     experience=update_data.get("experience", 0),
                     description=update_data.get("about") or update_data.get("description", ""),
-                    imageUrl=update_data.get("imageUrl") or update_data.get("profilePhoto") or user.profilePhoto,
+                    imageUrl=update_data.get("imageUrl") or update_data.get("profilePhoto"),
                     role=update_data.get("role", "Barber"),
                     workingDays=update_data.get("workingDays", ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]),
                     workingHours=update_data.get("workingHours", {}),

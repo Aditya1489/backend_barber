@@ -17,6 +17,12 @@ class UpdateProfileRequest(BaseModel):
     about: Optional[str] = None
     portfolio: Optional[list[str]] = None
     location: Optional[dict] = None
+    # Legal Consent
+    agreedToPrivacy: Optional[bool] = None
+    agreedToTerms: Optional[bool] = None
+    legalConsentName: Optional[str] = None
+    legalConsentPlace: Optional[str] = None
+    legalConsentTimestamp: Optional[str] = None
 
 class UpdatePermissionsRequest(BaseModel):
     location: Optional[bool] = None
@@ -31,11 +37,17 @@ class ProfileResponse(BaseModel):
     phone: str
     role: str
     profilePhoto: Optional[str] = None
-    permissions: Dict[str, bool]
+    permissions: Optional[Dict[str, bool]] = {}
     experience: Optional[int] = None
     about: Optional[str] = None
     portfolio: Optional[list[str]] = None
     location: Optional[dict] = None
+    # Legal Consent
+    agreedToPrivacy: Optional[bool] = None
+    agreedToTerms: Optional[bool] = None
+    legalConsentName: Optional[str] = None
+    legalConsentPlace: Optional[str] = None
+    legalConsentTimestamp: Optional[str] = None
 
 # Routes
 @router.get("/{user_id}", response_model=ProfileResponse)

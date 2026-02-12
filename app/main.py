@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 import asyncio
 from datetime import datetime
 from contextlib import asynccontextmanager
-from app.routers import base, profile, auth, bookings, shops, reviews, analytics, notifications, uploads, owner, users
+from app.routers import base, profile, auth, bookings, shops, reviews, analytics, notifications, uploads, owner, users, invites
 from app.services.booking_service import BookingService
 from app.services.fcm_service import FCMService
 
@@ -92,6 +92,7 @@ app.add_middleware(
 
 # Include all routers
 app.include_router(auth.router, prefix="/api/v1")
+app.include_router(invites.router, prefix="/api/v1") # Added Invites Router
 app.include_router(profile.router, prefix="/api/v1")
 app.include_router(bookings.router, prefix="/api/v1")
 app.include_router(shops.router, prefix="/api/v1")

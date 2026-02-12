@@ -236,19 +236,28 @@ async def get_shop_staff(shop_id: str):
 @router.post("/{shop_id}/staff-create")
 async def create_staff_for_shop(shop_id: str, staff_data: CreateStaffRequest):
     """Create a new user and staff profile, then link to shop"""
-    # 1. Create User
-    user_data = {
-        "name": staff_data.name,
-        "phone": staff_data.phone,
-        "email": staff_data.email or f"{staff_data.name.lower().replace(' ', '.')}@temp.com",
-        "role": "BARBER",
-        "password": "hashed_default_password",
-        "permissions": {"location": True, "notifications": True}
-    }
-    user = add_user(user_data)
+    # 1. Check if user exists by phone
+    existing_user = get_user_by_phone(staff_data.phone)
+    
+    if existing_user:
+        # Link existing user
+        user_id = existing_user["id"]
+        # Optionally update name if it was different? Let's just use existing for stability
+        user = existing_user
+    else:
+        # 1. Create User
+        user_data = {
+            "name": staff_data.name,
+            "phone": staff_data.phone,
+            "email": staff_data.email or f"{staff_data.name.lower().replace(' ', '.')}@temp.com",
+            "role": "BARBER",
+            "permissions": {"location": True, "notifications": True}
+        }
+        user = add_user(user_data)
+        user_id = user["id"]
     
     # 2. Update/Create Staff Profile
-    staff = update_staff_profile(user["id"], {
+    staff = update_staff_profile(user_id, {
         "name": staff_data.name,
         "shopId": shop_id,
         "role": "Barber",

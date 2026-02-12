@@ -1,227 +1,366 @@
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, status, Depends
+from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel, EmailStr
-from typing import Optional
-from datetime import datetime
+from typing import Optional, List, Dict, Any
+from datetime import datetime, timedelta
 import uuid
-import bcrypt
+import os
+from jose import JWTError, jwt
+
+from app.services.otp_service import otp_service
+from app.repositories.user_repository import UserRepository
+from app.repositories.shop_repository import ShopRepository
+from app.database import models
 
 router = APIRouter(prefix="/auth", tags=["authentication"])
 
-from app.db import get_user_by_email, get_user_by_phone, update_user, add_user
+# Config
+SECRET_KEY = os.getenv("JWT_SECRET", "supersecretkey") # Change in production
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_MINUTES = 30 * 24 * 60 # 30 days
 
-# Request/Response Models
-class RegisterRequest(BaseModel):
-    name: str
-    email: EmailStr
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/otp/verify") # Placeholder URL
+
+# Models
+class OTPRequest(BaseModel):
     phone: str
-    password: str
-    role: str = "CUSTOMER"  # CUSTOMER, BARBER, OWNER
 
-class LoginRequest(BaseModel):
-    email: EmailStr
-    password: str
+class OTPVerifyRequest(BaseModel):
+    phone: str
+    code: str
 
-class LoginResponse(BaseModel):
-    token: str
+class OTPUpdateRequest(BaseModel):
+    new_phone: str
+
+class OTPUpdateVerifyRequest(BaseModel):
+    new_phone: str
+    code: str
+
+class RoleSelectionRequest(BaseModel):
+    user_id: str
+    role: str # OWNER, BARBER, CUSTOMER
+    shop_id: Optional[str] = None
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str
     user: dict
-    message: str
 
-class RegisterResponse(BaseModel):
-    user: dict
+class AuthResponse(BaseModel):
+    user: Optional[dict] = None
+    access_token: Optional[str] = None
+    token_type: Optional[str] = None
+    roles: Optional[List[dict]] = None
     message: str
+    action: str # "LOGIN", "SELECT_ROLE", "REGISTER"
+    
+class UserPayload(BaseModel):
+    sub: str
+    role: Optional[str] = None
+    shop_id: Optional[str] = None
 
-class GoogleAuthRequest(BaseModel):
-    idToken: str
-    role: str = "CUSTOMER"
+# Utils
+def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
+    to_encode = data.copy()
+    if expires_delta:
+        expire = datetime.utcnow() + expires_delta
+    else:
+        expire = datetime.utcnow() + timedelta(minutes=15)
+    to_encode.update({"exp": expire})
+    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
+    return encoded_jwt
+
+def normalize_phone(phone: str) -> str:
+    return "".join(filter(str.isdigit, str(phone)))
+
+async def get_current_user(token: str = Depends(oauth2_scheme)):
+    credentials_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id: str = payload.get("sub")
+        if user_id is None:
+            raise credentials_exception
+        # token_data = UserPayload(**payload) # Optional validation
+    except JWTError:
+        raise credentials_exception
+        
+    user = UserRepository.get_by_id(user_id)
+    if user is None:
+        raise credentials_exception
+    return user
+    
+async def get_current_role(token: str = Depends(oauth2_scheme)):
+    """Extract role info from token without full DB lookup if possible, or validate."""
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        return payload
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
 
 # Routes
-@router.post("/register", response_model=RegisterResponse, status_code=status.HTTP_201_CREATED)
-async def register(data: RegisterRequest):
-    """Register a new user"""
-    print(f"DEBUG: Registration attempt for email: {data.email}, role: {data.role}")
+@router.post("/otp/request", status_code=status.HTTP_200_OK)
+async def request_otp(data: OTPRequest):
+    """Request OTP for phone number."""
+    phone = normalize_phone(data.phone)
+    if len(phone) < 10:
+        raise HTTPException(status_code=400, detail="Invalid phone number")
+        
+    success = otp_service.request_otp(phone)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to send OTP")
+        
+    return {"message": "OTP sent successfully"}
+
+@router.post("/otp/verify", response_model=AuthResponse)
+async def verify_otp(data: OTPVerifyRequest):
+    """Verify OTP and log in/register user."""
+    phone = normalize_phone(data.phone)
     
-    # Check if user already exists
-    existing_user_email = get_user_by_email(data.email)
-    if existing_user_email:
-        # If it's a real user with this email, error out
-        if "temp.com" not in data.email: # Simple check if it was a placeholder email
-             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="User with this email already exists"
-            )
-
-    # Check if user exists by PHONE (the critical link for Staff)
-    # Normalize phone numbers for comparison (remove spaces, dashes, parentheses)
-    def normalize_phone(p):
-        return "".join(filter(str.isdigit, str(p))) if p else ""
-
-    input_phone = normalize_phone(data.phone)
-    existing_user_phone = get_user_by_phone(data.phone) # We can also try normalized if needed, but the helper handles exact for now
-
-    hashed_pwd = bcrypt.hashpw(data.password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-
-    if existing_user_phone:
-        # Use the existing ID to maintain links (e.g. to a Shop)
-        user_id = existing_user_phone["id"]
-        # Update details
-        update_data = {
-            "name": data.name,
-            "email": data.email,
-            "password": hashed_pwd,
-            "role": data.role,
-            "createdAt": datetime.utcnow()
+    if not otp_service.verify_otp(phone, data.code):
+        raise HTTPException(status_code=400, detail="Invalid OTP")
+        
+    # Get User
+    user_dict = UserRepository.get_by_phone(phone)
+    
+    if not user_dict:
+        # User NOT found -> Return Registration Token
+        # Create temporary token with phone number
+        registration_token = create_access_token(
+            data={"sub": phone, "scope": "registration", "role": "GUEST"},
+            expires_delta=timedelta(minutes=30) # 30 mins to complete registration
+        )
+        
+        return {
+            "user": None,
+            "access_token": registration_token,
+            "token_type": "bearer",
+            "message": "User not found, please register.",
+            "action": "REGISTER"
         }
         
-        # Ensure permissions are set
-        if "permissions" not in existing_user_phone or not existing_user_phone["permissions"]:
-             update_data["permissions"] = {
-                "location": False,
-                "notifications": False,
-                "camera": False,
-                "storage": False
-            }
+    # User exists. Check Roles.
+    # ... (rest of role checking logic remains same) ...
+
+    # Let's perform a direct DB query here to get efficient role list
+    with UserRepository.get_session() as db:
+        user_obj = db.query(models.User).filter(models.User.id == user_dict["id"]).first()
+        raw_roles = user_obj.roles # List of UserRole
+        
+        roles_list = []
+        for ur in user_obj.roles:
+            if ur.active:
+                shop_name = None
+                if ur.shop_id:
+                     shop = db.query(models.Shop).filter(models.Shop.id == ur.shop_id).first()
+                     if shop:
+                         shop_name = shop.name
+                
+                roles_list.append({
+                    "role": ur.role.name,
+                    "shop_id": ur.shop_id,
+                    "shop_name": shop_name
+                })
             
-        new_user = update_user(user_id, update_data)
-        # We don't create a new entry, just update
-    else:
-        # Create new user
-        user_id = str(uuid.uuid4())
-        new_user = {
-            "id": user_id,
-            "name": data.name,
-            "email": data.email,
-            "phone": data.phone,
-            "password": hashed_pwd,
-            "role": data.role,
-            "profilePhoto": None,
-            "permissions": {
-                "location": False,
-                "notifications": False,
-                "camera": False,
-                "storage": False
-            },
-            "createdAt": datetime.utcnow()
-        }
-        new_user = add_user(new_user)
-    
-    # Remove password from response
-    user_response = {k: v for k, v in new_user.items() if k != "password"}
-    
-    return {
-        "user": user_response,
-        "message": "Registration successful"
-    }
-
-@router.post("/login", response_model=LoginResponse)
-async def login(data: LoginRequest):
-    """Login with email and password"""
-    
-    # Check if user exists
-    user = get_user_by_email(data.email)
-    if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
+    # Decision Logic
+    # 1. If only CUSTOMER -> Auto Login
+    if len(roles_list) == 1 and roles_list[0]["role"] == "CUSTOMER":
+        # Generate Token
+        access_token = create_access_token(
+            data={"sub": user_dict["id"], "role": "CUSTOMER"}
         )
-    
-    # Verify password
-    if not bcrypt.checkpw(data.password.encode('utf-8'), user["password"].encode('utf-8')):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid email or password"
-        )
-    
-    # Generate token (in production, use JWT)
-    token = f"mock_token_{user['id']}_{datetime.utcnow().timestamp()}"
-    
-    # Remove password from response
-    user_response = {k: v for k, v in user.items() if k != "password"}
-    
-    return {
-        "token": token,
-        "user": user_response,
-        "message": "Login successful"
-    }
-
-@router.post("/google", response_model=LoginResponse)
-async def google_auth(data: GoogleAuthRequest):
-    """Authenticate with Google"""
-    
-    # In production, verify the idToken with Google
-    # For now, create a mock user
-    
-    email = f"google_user_{uuid.uuid4().hex[:8]}@gmail.com"
-    
-    # Check if user exists
-    user = get_user_by_email(email)
-    if user:
-        pass
-    else:
-        # Create new user
-        user_id = str(uuid.uuid4())
-        user = {
-            "id": user_id,
-            "name": "Google User",
-            "email": email,
-            "phone": "",
-            "password": "",
-            "role": data.role,
-            "profilePhoto": "https://picsum.photos/200/200?random=" + str(uuid.uuid4().hex[:4]),
-            "permissions": {
-                "location": False,
-                "notifications": False,
-                "camera": False,
-                "storage": False
-            },
-            "createdAt": datetime.utcnow()
+        return {
+            "user": user_dict,
+            "access_token": access_token,
+            "token_type": "bearer",
+            "message": "Login successful",
+            "action": "LOGIN"
         }
-        user = add_user(user)
-    
-    # Generate token
-    token = f"mock_token_{user['id']}_{datetime.utcnow().timestamp()}"
-    
-    # Remove password from response
-    user_response = {k: v for k, v in user.items() if k != "password"}
-    
+        
+    # 2. If multiple roles (Result of Barber/Owner usage) -> Return Choice
     return {
-        "token": token,
-        "user": user_response,
-        "message": "Google authentication successful"
+        "user": user_dict, # Contains basic info
+        "roles": roles_list,
+        "message": "Select a role to continue",
+        "action": "SELECT_ROLE"
     }
 
-@router.post("/logout")
-async def logout():
-    """Logout user"""
-    return {"message": "Logout successful"}
+class RegisterRequest(BaseModel):
+    name: str
+    email: Optional[str] = None
+    role: str # OWNER, BARBER, CUSTOMER
+    shop_name: Optional[str] = None 
+    shop_address: Optional[str] = None
+    # Legal Consent
+    agreedToPrivacy: bool = False
+    agreedToTerms: bool = False
+    legalConsentName: Optional[str] = None
+    legalConsentPlace: Optional[str] = None
+    legalConsentTimestamp: Optional[str] = None
+    
+@router.post("/register", response_model=AuthResponse)
+async def complete_registration(data: RegisterRequest, token: str = Depends(oauth2_scheme)):
+    """Complete registration using temporary token."""
+    print(f"DEBUG: complete_registration called. Data: {data}")
+    
+    # 1. Verify Registration Token
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        phone = payload.get("sub")
+        scope = payload.get("scope")
+        print(f"DEBUG: Token payload: {payload}")
+        
+        if not phone or scope != "registration":
+             print("DEBUG: Invalid token scope or phone missing")
+             raise HTTPException(status_code=401, detail="Invalid registration token")
+             
+    except JWTError as e:
+        print(f"DEBUG: JWT Error: {e}")
+        raise HTTPException(status_code=401, detail="Invalid token")
 
-@router.post("/forgot-password")
-async def forgot_password(email: EmailStr):
-    """Send password reset email"""
-    
-    user = get_user_by_email(email)
-    if not user:
-        # Don't reveal if email exists or not for security
-        return {"message": "If the email exists, a password reset link has been sent"}
-    
-    # In production, send actual email with reset link
-    return {"message": "If the email exists, a password reset link has been sent"}
+    # 2. Check if user exists (Double check)
+    if UserRepository.get_by_phone(phone):
+         print(f"DEBUG: User already exists for phone {phone}")
+         raise HTTPException(status_code=400, detail="User already exists")
 
-@router.post("/reset-password")
-async def reset_password(token: str, new_password: str):
-    """Reset password with token"""
+    # 3. Create User
+    user_id = str(uuid.uuid4())
+    # Handle email if provided, else placeholder
+    email = data.email
+    if not email:
+        email = f"{phone}_{uuid.uuid4().hex[:8]}@placeholder.com"
+        
+    new_user_data = {
+        "id": user_id,
+        "phone": phone,
+        "name": data.name,
+        "email": email,
+        "role": data.role,
+        "fcmToken": None
+    }
     
-    # In production, verify token and update password
-    return {"message": "Password reset successful"}
+    try:
+        print(f"DEBUG: Creating user with data: {new_user_data}")
+        user_dict = UserRepository.create(new_user_data)
+        print(f"DEBUG: User created: {user_dict}")
+        
+        # If Owner, create shop? 
+        # Usually registration flow might involve shop creation separately.
+        # But for MVP, if Role is Owner, we might need to handle shop creation here or later.
+        # Based on "RegistrationFlow", it asks for Shop Name.
+        
+        if data.role == "OWNER" and data.shop_name:
+             # Create shop logic... 
+             # For now, let's assume ShopRepository.create handles it or we call it here.
+             # We need ShopRepository.create(owner_id, shop_data)
+             pass 
 
-@router.get("/verify-token")
-async def verify_token(token: str):
-    """Verify if token is valid"""
+        # Generate Access Token
+        access_token = create_access_token(
+            data={"sub": user_id, "role": data.role}
+        )
+        
+        return {
+            "user": user_dict,
+            "access_token": access_token,
+            "token_type": "bearer",
+            "message": "Registration successful",
+            "action": "LOGIN"
+        }
+        
+    except Exception as e:
+        print(f"DEBUG: Registration Exception: {e}")
+        raise HTTPException(status_code=500, detail=f"Registration failed: {str(e)}")
+
+@router.post("/login/select-role", response_model=AuthResponse)
+async def select_role(data: RoleSelectionRequest):
+    """Login as a specific role."""
     
-    # In production, verify JWT token
-    if token.startswith("mock_token_"):
-        return {"valid": True, "message": "Token is valid"}
+    with UserRepository.get_session() as db:
+        # Verify ownership
+        # We need to find a UserRole that matches user_id, role name (or ID?), and shop_id
+        # Request says "role: OWNER | BARBER".
+        
+        query = db.query(models.UserRole).join(models.Role).filter(
+            models.UserRole.user_id == data.user_id,
+            models.Role.name == data.role,
+            models.UserRole.active == True
+        )
+        
+        if data.shop_id:
+             query = query.filter(models.UserRole.shop_id == data.shop_id)
+             
+        user_role = query.first()
+        
+        if not user_role:
+             raise HTTPException(status_code=401, detail="Invalid role selection")
+             
+        # Generate Scoped Token
+        token_data = {
+            "sub": data.user_id,
+            "role": data.role,
+            "shop_id": data.shop_id
+        }
+        access_token = create_access_token(data=token_data)
+        
+        # Get User Dict (backward compat)
+        user_dict = UserRepository.get_by_id(data.user_id)
+        # Maybe patch user_dict role to match selected?
+        user_dict["role"] = data.role
+        
+        return {
+            "user": user_dict,
+            "access_token": access_token,
+            "token_type": "bearer",
+            "message": f"Logged in as {data.role}",
+            "action": "LOGIN"
+        }
+        return {
+            "user": user_dict,
+            "access_token": access_token,
+            "token_type": "bearer",
+            "message": f"Logged in as {data.role}",
+            "action": "LOGIN"
+        }
+
+@router.post("/otp/request-update", status_code=status.HTTP_200_OK)
+async def request_update_otp(data: OTPUpdateRequest, current_user: dict = Depends(get_current_user)):
+    """Request OTP for UPDATING phone number (Authenticated user only)."""
+    new_phone = normalize_phone(data.new_phone)
+    if len(new_phone) < 10:
+        raise HTTPException(status_code=400, detail="Invalid phone number")
     
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Invalid token"
-    )
+    # Check if new phone is already occupied by ANOTHER user
+    existing_user = UserRepository.get_by_phone(new_phone)
+    if existing_user and existing_user['id'] != current_user['id']:
+        raise HTTPException(status_code=400, detail="Phone number already in use by another account")
+        
+    success = otp_service.request_otp(new_phone)
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to send OTP")
+        
+    return {"message": "OTP sent to new number"}
+
+@router.post("/otp/verify-update", status_code=status.HTTP_200_OK)
+async def verify_update_otp(data: OTPUpdateVerifyRequest, current_user: dict = Depends(get_current_user)):
+    """Verify OTP and update user's phone number."""
+    new_phone = normalize_phone(data.new_phone)
+    
+    if not otp_service.verify_otp(new_phone, data.code):
+        raise HTTPException(status_code=400, detail="Invalid OTP")
+        
+    # Check again for conflict (just in case)
+    existing_user = UserRepository.get_by_phone(new_phone)
+    if existing_user and existing_user['id'] != current_user['id']:
+        raise HTTPException(status_code=400, detail="Phone number already in use by another account")
+    
+    # Update User Phone
+    updated_user = UserRepository.update(current_user['id'], {"phone": new_phone})
+    
+    return {
+        "message": "Phone number updated successfully",
+        "user": updated_user
+    }

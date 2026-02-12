@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, Integer, JSON, DateTime, ForeignKey, Boolean
+from sqlalchemy import Column, String, Float, Integer, JSON, DateTime, ForeignKey, Boolean, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.database.database import Base
 from datetime import datetime
@@ -13,22 +13,95 @@ class User(Base):
     id = Column(String, primary_key=True, default=generate_uuid)
     name = Column(String, nullable=False)
     email = Column(String, unique=True, index=True, nullable=False)
-    phone = Column(String, index=True, nullable=False)
-    password = Column(String, nullable=False)
-    role = Column(String, nullable=False) # CUSTOMER, OWNER, BARBER
-    profilePhoto = Column(String, nullable=True)
+    phone = Column(String, unique=True, index=True, nullable=False) # Enforce Unique
+    # password removed
     fcmToken = Column(String, nullable=True)
-    permissions = Column(JSON, default={})
     createdAt = Column(DateTime, default=datetime.utcnow)
     
-    # Barber/Staff specific fields
-    experience = Column(Integer, nullable=True)
-    about = Column(String, nullable=True)
-    portfolio = Column(JSON, nullable=True) # List of image URLs
+    # Legal Consent & Digital Signature
+    agreed_to_privacy = Column(Boolean, default=False)
+    agreed_to_terms = Column(Boolean, default=False)
+    legal_consent_name = Column(String, nullable=True)
+    legal_consent_place = Column(String, nullable=True)
+    legal_consent_timestamp = Column(DateTime, nullable=True)
     
     # Relationships
+    roles = relationship("UserRole", back_populates="user", cascade="all, delete-orphan")
+    customer_profile = relationship("CustomerProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    owner_profile = relationship("OwnerProfile", back_populates="user", uselist=False, cascade="all, delete-orphan")
+    staff_profile = relationship("Staff", back_populates="user") # Changed to list (uselist=True by default)
+    # Renaming to staff_profiles would be better naming but breaks existing code access significantly.
+    # Leaving name `staff_profile` but it will now return a LIST.
+    # Existing code `user.staff_profile.some_field` WILL BREAK.
+    # I must fix existing code in repositories.
+    
+    # Valid for Owners
     shops_owned = relationship("Shop", back_populates="owner")
-    staff_profile = relationship("Staff", back_populates="user", uselist=False)
+
+
+class Role(Base):
+    __tablename__ = "roles"
+    
+    id = Column(String, primary_key=True, default=generate_uuid)
+    name = Column(String, unique=True, nullable=False) # customer, barber, owner, admin
+
+
+class UserRole(Base):
+    __tablename__ = "user_roles"
+    
+    id = Column(String, primary_key=True, default=generate_uuid)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    role_id = Column(String, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False)
+    shop_id = Column(String, ForeignKey("shops.id", ondelete="CASCADE"), nullable=True)
+    active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    __table_args__ = (
+        UniqueConstraint('user_id', 'role_id', 'shop_id', name='uq_user_role_shop'),
+    )
+
+    user = relationship("User", back_populates="roles")
+    role = relationship("Role")
+    # shop relationship optional if needed
+
+
+class StaffInvite(Base):
+    __tablename__ = "staff_invites"
+    
+    id = Column(String, primary_key=True, default=generate_uuid)
+    phone = Column(String, index=True, nullable=False)
+    shop_id = Column(String, ForeignKey("shops.id", ondelete="CASCADE"), nullable=False)
+    role = Column(String, default="BARBER", nullable=False)
+    status = Column(String, default="PENDING", nullable=False) # PENDING, ACCEPTED, DECLINED, EXPIRED
+    created_at = Column(DateTime, default=datetime.utcnow)
+    expires_at = Column(DateTime, nullable=True)
+
+    shop = relationship("Shop") 
+
+
+class CustomerProfile(Base):
+    __tablename__ = "customer_profiles"
+    
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    profile_photo = Column(String, nullable=True)
+    preferences = Column(JSON, default={})
+    loyalty_points = Column(Integer, default=0)
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship("User", back_populates="customer_profile")
+
+
+class OwnerProfile(Base):
+    __tablename__ = "owner_profiles"
+    
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    profile_photo = Column(String, nullable=True)
+    permissions = Column(JSON, default={})
+    created_at = Column(DateTime, default=datetime.utcnow)
+    
+    user = relationship("User", back_populates="owner_profile")
+
+# Legacy Shop Models (Updated for new Auth)
 
 class Shop(Base):
     __tablename__ = "shops"
@@ -39,9 +112,8 @@ class Shop(Base):
     description = Column(String, nullable=True)
     rating = Column(Float, default=0.0)
     reviewsCount = Column(Integer, default=0)
-    # photos column moved to ShopPhoto table
-    coordinates = Column(JSON, default={}) # {"lat": 0.0, "lng": 0.0}
-    ownerId = Column(String, ForeignKey("users.id"))
+    coordinates = Column(JSON, default={}) 
+    ownerId = Column(String, ForeignKey("users.id")) # Owner's User ID
     phone = Column(String, nullable=True)
     email = Column(String, nullable=True)
     hours = Column(JSON, default={})
@@ -57,22 +129,20 @@ class Staff(Base):
     __tablename__ = "staff_profiles"
     
     id = Column(String, primary_key=True, default=generate_uuid)
-    userId = Column(String, ForeignKey("users.id"), unique=True)
+    userId = Column(String, ForeignKey("users.id"), unique=False) # Changed unique to False
     shopId = Column(String, ForeignKey("shops.id"), nullable=True)
     name = Column(String, nullable=False)
-    role = Column(String, default="Barber")
+    role = Column(String, default="Barber") # Job title, not App Role
     experience = Column(Integer, default=0)
     rating = Column(Float, default=0.0)
     reviewsCount = Column(Integer, default=0)
-    imageUrl = Column(String, nullable=True)
+    imageUrl = Column(String, nullable=True) # Profile photo for barber role
     description = Column(String, nullable=True)
-    skills = Column(String, nullable=True)  # Comma-separated skill names
-    workingDays = Column(JSON, default=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"])  # Default Mon-Sat
-    workingHours = Column(JSON, default={}) # {"Mon": {"start": "09:00", "end": "18:00"}, ...}
-    bufferTime = Column(Integer, default=0) # In minutes
-    isAvailable = Column(Boolean, default=True) # For "Not working today" state
-    # workPhotos moved to StaffWorkPhoto table
-    # services moved to StaffService table
+    skills = Column(String, nullable=True)
+    workingDays = Column(JSON, default=["Mon", "Tue", "Wed", "Thu", "Fri", "Sat"])
+    workingHours = Column(JSON, default={})
+    bufferTime = Column(Integer, default=0)
+    isAvailable = Column(Boolean, default=True)
     
     # Relationships
     user = relationship("User", back_populates="staff_profile")
@@ -100,14 +170,14 @@ class Booking(Base) :
     customerId = Column(String, ForeignKey("users.id"))
     shopId = Column(String, ForeignKey("shops.id"))
     staffId = Column(String, ForeignKey("staff_profiles.id"))
-    services = Column(JSON, default=[]) # List of service IDs or objects
-    date = Column(String, nullable=False) # Store as string for now to match old logic or DateTime
+    services = Column(JSON, default=[]) 
+    date = Column(String, nullable=False) 
     timeSlot = Column(String, nullable=False)
-    status = Column(String, default="PENDING") # INITIATED, PENDING, AWAITING_CUSTOMER_CONFIRMATION, CONFIRMED, IN_PROGRESS, COMPLETED, CANCELLED_BY_CUSTOMER, CANCELLED_BY_BARBER, NO_SHOW, EXPIRED
+    status = Column(String, default="PENDING") 
     isPaidConfirmation = Column(Boolean, default=False)
-    expiresAt = Column(DateTime, nullable=True) # For TTL after acceptance
+    expiresAt = Column(DateTime, nullable=True)
     totalAmount = Column(Float, nullable=False)
-    totalDuration = Column(Integer, nullable=True) # In minutes
+    totalDuration = Column(Integer, nullable=True) 
     bookedAt = Column(DateTime, default=datetime.utcnow)
     notes = Column(String, nullable=True)
     idempotencyKey = Column(String, nullable=True, unique=True)
@@ -120,7 +190,7 @@ class Review(Base):
     
     id = Column(String, primary_key=True, default=generate_uuid)
     shopId = Column(String, ForeignKey("shops.id"))
-    staffId = Column(String, ForeignKey("staff_profiles.id"), nullable=True)  # NEW: Link to staff
+    staffId = Column(String, ForeignKey("staff_profiles.id"), nullable=True)
     customerId = Column(String, ForeignKey("users.id"))
     customerName = Column(String, nullable=False)
     rating = Column(Float, nullable=False)
@@ -136,7 +206,7 @@ class Notification(Base):
     userId = Column(String, ForeignKey("users.id"))
     title = Column(String, nullable=False)
     body = Column(String, nullable=False)
-    type = Column(String, nullable=False) # APPOINTMENT, PROMO, SYSTEM
+    type = Column(String, nullable=False) 
     data = Column(JSON, default={})
     isRead = Column(Boolean, default=False)
     createdAt = Column(DateTime, default=datetime.utcnow)

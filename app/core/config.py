@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     
     # Optional field, but database.py resolves authority via os.environ directly
     DATABASE_URL: Optional[str] = None
+    
+    # Security
+    JWT_SECRET: str = "supersecretkey"
 
     class Config:
         case_sensitive = True
