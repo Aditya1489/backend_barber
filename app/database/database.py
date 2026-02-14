@@ -13,26 +13,39 @@ def resolve_database_url():
     """
     AUTHORITATIVE DATABASE URL RESOLUTION
     ------------------------------------
-    This function implements the strict priority logic required for 
-    safe deployment across local and production (Render/Neon) environments.
-    
-    The SQLAlchemy engine MUST be created ONLY after this decision is made.
+    Priority:
+    1. GCP Cloud SQL (Unix Socket) - via DB_INSTANCE_NAME
+    2. Render/Generic Cloud (TCP/IP) - via DATABASE_URL
+    3. Component-based (TCP/IP) - via individual variables
     """
-    # 1. Check if we are on Render (Production)
-    on_render = os.environ.get("RENDER") == "true"
-    database_url = os.environ.get("DATABASE_URL")
+    # Debug info (Sanitized)
+    logger.info(f"🔍 DB Resolution: DB_INSTANCE_NAME={os.environ.get('DB_INSTANCE_NAME')}")
     
-    if on_render and database_url:
-        # SQLAlchemy 1.4+ requires postgresql:// instead of postgres://
+    # 1. GCP Cloud SQL (Unix Socket)
+    instance_connection = os.environ.get("DB_INSTANCE_NAME")
+    if instance_connection:
+        db_user = os.environ.get("POSTGRES_USER", "postgres")
+        db_pass = os.environ.get("POSTGRES_PASSWORD", "")
+        db_name = os.environ.get("POSTGRES_DB", "barbersync")
+        logger.info(f"🚀 Database: Using GCP PRODUCTION connection (Unix Socket: {instance_connection})")
+        return f"postgresql://{db_user}:{db_pass}@/{db_name}?host=/cloudsql/{instance_connection}"
+
+    # 2. Render/Neon (Direct URL)
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url:
         if database_url.startswith("postgres://"):
             database_url = database_url.replace("postgres://", "postgresql://", 1)
-        
-        logger.info("🚀 Database: Using PRODUCTION connection (DATABASE_URL)")
+        logger.info("🚀 Database: Using RENDER/CLOUD PRODUCTION connection (DATABASE_URL)")
         return database_url
 
-    # 2. Fallback to specific local components (Local Mac development)
-    logger.info("🏠 Database: Using LOCAL connection (localhost)")
-    return f"postgresql://{settings.POSTGRES_USER}:{settings.POSTGRES_PASSWORD}@{settings.POSTGRES_SERVER}/{settings.POSTGRES_DB}"
+    # 3. Fallback to components
+    server = os.environ.get("POSTGRES_SERVER", "localhost")
+    user = os.environ.get("POSTGRES_USER", "postgres")
+    password = os.environ.get("POSTGRES_PASSWORD", "aditya123")
+    db = os.environ.get("POSTGRES_DB", "barbersync")
+    
+    logger.info(f"🏠 Database: Using COMPONENT connection ({server}:{user})")
+    return f"postgresql://{user}:{password}@{server}/{db}"
 
 # DECISION: Resolve the URL before any engine or session initialization
 DATABASE_URL = resolve_database_url()

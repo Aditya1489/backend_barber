@@ -17,6 +17,7 @@ from app.db import (
     BookingRepository
 )
 from app.services.fcm_service import FCMService
+from app.services.payment_service import PaymentService
 
 # Request/Response Models
 class CreateBookingRequest(BaseModel):
@@ -27,6 +28,12 @@ class CreateBookingRequest(BaseModel):
     date: str
     timeSlot: str
     notes: Optional[str] = ""
+    idempotencyKey: Optional[str] = None
+
+class PaymentConfirmationRequest(BaseModel):
+    razorpay_payment_id: str
+    razorpay_order_id: str
+    razorpay_signature: str
     idempotencyKey: Optional[str] = None
 
 class UpdateBookingRequest(BaseModel):
@@ -83,11 +90,43 @@ async def create_booking_route(booking: CreateBookingRequest):
             detail="You have too many pending bookings. Please confirm or cancel existing ones."
         )
 
+    # --- SERVICE DATA RESOLUTION ---
+    # Fetch durations from DB to compute exact startTime/endTime for overlap check
+    db_session = SessionLocal()
+    services = db_session.query(models.Service).filter(models.Service.id.in_(booking.services)).all()
+    total_duration = sum(s.duration for s in services)
+    db_session.close()
+
+    try:
+        start_dt = datetime.strptime(f"{booking.date} {booking.timeSlot}", "%Y-%m-%d %I:%M %p")
+        end_dt = start_dt + timedelta(minutes=total_duration)
+    except Exception as ie:
+        print(f"❌ [BOOKING] Date parse error: {ie}")
+        raise HTTPException(status_code=400, detail="Invalid date or time format.")
+
     # --- CONFLICT PROTECTION ---
-    if BookingRepository.check_customer_overlap(booking.customerId, booking.date, booking.timeSlot):
+    if BookingRepository.check_customer_overlap(booking.customerId, start_dt, end_dt):
+        print(f"❌ [BOOKING] Overlap detected for customer {booking.customerId} at {start_dt}")
+        
+        # DEBUG: Find the specific conflicting booking
+        from app.database.database import SessionLocal
+        from app.database import models
+        db_debug = SessionLocal()
+        active_statuses = ["AWAITING_CUSTOMER_CONFIRMATION", "CONFIRMED", "IN_PROGRESS", "PENDING"]
+        conflict = db_debug.query(models.Booking).filter(
+            models.Booking.customerId == booking.customerId,
+            models.Booking.status.in_(active_statuses),
+            models.Booking.startTime < end_dt,
+            models.Booking.endTime > start_dt
+        ).first()
+        db_debug.close()
+        
+        if conflict:
+             print(f"❌ [BOOKING] Conflicting Booking: ID={conflict.id}, Status={conflict.status}, Date={conflict.date}, Slot={conflict.timeSlot}")
+
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="You already have an active booking overlapping with this time slot."
+            detail="You already have an active booking overlapping with the selected time range."
         )
     # ---------------------------
 
@@ -161,7 +200,10 @@ async def get_bookings_route(
     limit: Optional[int] = Query(None)
 ):
     """Get bookings with optional filters"""
-    return get_bookings(customer_id, staff_id, shop_id, status, limit)
+    print(f"[DEBUG] Fetching bookings: customer_id={customer_id}, staff_id={staff_id}, shop_id={shop_id}, status={status}")
+    results = get_bookings(customer_id, staff_id, shop_id, status, limit)
+    print(f"[DEBUG] Found {len(results)} bookings")
+    return results
 
 @router.get("/{booking_id}", response_model=BookingResponse)
 async def get_booking_route(booking_id: str):
@@ -204,21 +246,40 @@ async def update_booking_route(booking_id: str, update_data: UpdateBookingReques
 async def update_booking_status_route(booking_id: str, new_status: str):
     """Update booking status with strict FSM logic"""
     
+    booking = get_booking_by_id(booking_id)
+    if not booking:
+        raise HTTPException(status_code=404, detail="Booking not found")
+
     valid_statuses = [
         "PENDING", "AWAITING_CUSTOMER_CONFIRMATION", "CONFIRMED", 
         "IN_PROGRESS", "COMPLETED", "CANCELLED_BY_CUSTOMER", 
         "CANCELLED_BY_BARBER", "NO_SHOW", "EXPIRED"
     ]
-    if new_status not in valid_statuses:
+    # --- STRICT FSM TRANSITION MATRIX ---
+    # PENDING -> AWAITING_CUSTOMER_CONFIRMATION
+    # AWAITING_CUSTOMER_CONFIRMATION -> CONFIRMED | EXPIRED
+    # CONFIRMED -> IN_PROGRESS | CANCELLED
+    # IN_PROGRESS -> COMPLETED
+    # CANCELLED / EXPIRED / COMPLETED -> Terminal (No transitions allowed)
+
+    current_status = booking["status"]
+    allowed = False
+    
+    if current_status == "PENDING":
+        allowed = new_status in ["AWAITING_CUSTOMER_CONFIRMATION", "CANCELLED_BY_BARBER", "CANCELLED_BY_CUSTOMER"]
+    elif current_status == "AWAITING_CUSTOMER_CONFIRMATION":
+        allowed = new_status in ["CONFIRMED", "EXPIRED", "CANCELLED_BY_CUSTOMER"]
+    elif current_status == "CONFIRMED":
+        allowed = new_status in ["IN_PROGRESS", "CANCELLED_BY_CUSTOMER", "CANCELLED_BY_BARBER"]
+    elif current_status == "IN_PROGRESS":
+        allowed = new_status in ["COMPLETED", "CANCELLED_BY_BARBER"]
+    
+    if not allowed and current_status != new_status:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid status. Must be one of: {', '.join(valid_statuses)}"
+            detail=f"Illegal transition: Cannot move booking from {current_status} to {new_status}"
         )
     
-    booking = get_booking_by_id(booking_id)
-    if not booking:
-        raise HTTPException(status_code=404, detail="Booking not found")
-
     update_data = {"status": new_status}
     
     # Logic for AWAITING_CUSTOMER_CONFIRMATION (Barber accepts)
@@ -230,7 +291,15 @@ async def update_booking_status_route(booking_id: str, new_status: str):
     if new_status == "CONFIRMED":
         update_data["isPaidConfirmation"] = True
 
-    updated = update_booking(booking_id, update_data)
+    try:
+        updated = update_booking(booking_id, update_data)
+        if not updated:
+            raise Exception("Failed to update booking in database")
+    except Exception as e:
+        print(f"❌ [BOOKING] Update failed: {e}")
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Database update failed")
     
     # --- TRIGGER NOTIFICATIONS ---
     try:
@@ -242,31 +311,36 @@ async def update_booking_status_route(booking_id: str, new_status: str):
             body = f"Your barber has accepted your request. Please confirm your booking by paying ₹1 within 15 minutes."
         elif new_status == "CONFIRMED":
             title = "Booking Confirmed! ✅"
-            body = f"Payment received. Your appointment on {updated['date']} is now fully confirmed."
+            body = f"Payment received. Your appointment on {updated.get('date', 'unknown')} is now fully confirmed."
         elif "CANCELLED" in new_status:
             title = "Booking Cancelled ❌"
-            body = f"The booking for {updated['date']} has been cancelled."
+            body = f"The booking for {updated.get('date', 'unknown')} has been cancelled."
         
         # Database notification (legacy)
-        create_notification({
-            "userId": updated["customerId"],
-            "title": title,
-            "body": body,
-            "type": "APPOINTMENT_STATUS",
-            "data": {"bookingId": booking_id, "status": new_status}
-        })
-        
-        # Push Notification (NEW)
-        customer_user = get_user_by_id(updated["customerId"])
-        if customer_user and customer_user.get("fcmToken"):
-            FCMService.send_to_user(
-                fcm_token=customer_user["fcmToken"],
-                title=title,
-                body=body,
-                data={"bookingId": booking_id, "status": new_status, "type": "STATUS_UPDATE"}
-            )
+        customer_id = updated.get("customerId")
+        if customer_id:
+            print(f"🔔 [BACKEND] Creating notification for customer: {customer_id}")
+            create_notification({
+                "userId": customer_id,
+                "title": title,
+                "body": body,
+                "type": "APPOINTMENT_STATUS",
+                "data": {"bookingId": booking_id, "status": new_status}
+            })
+            
+            # Push Notification (NEW)
+            customer_user = get_user_by_id(customer_id)
+            if customer_user and customer_user.get("fcmToken"):
+                FCMService.send_to_user(
+                    fcm_token=customer_user["fcmToken"],
+                    title=title,
+                    body=body,
+                    data={"bookingId": booking_id, "status": new_status, "type": "STATUS_UPDATE"}
+                )
     except Exception as e:
-        print(f"[NOTIF] Error: {e}")
+        print(f"⚠️ [NOTIF] Error: {e}")
+        import traceback
+        traceback.print_exc()
     
     # --- AUDIT LOGGING ---
     try:
@@ -280,28 +354,47 @@ async def update_booking_status_route(booking_id: str, new_status: str):
             action_type="status_change",
             entity_type="booking",
             entity_id=booking_id,
-            details={"oldStatus": booking["status"], "newStatus": new_status},
-            shop_id=booking["shopId"]
+            details={"oldStatus": booking.get("status"), "newStatus": new_status},
+            shop_id=booking.get("shopId")
         )
         db_session.close()
     except Exception as e:
-        print(f"[AUDIT] Error: {e}")
+        print(f"⚠️ [AUDIT] Error: {e}")
+        import traceback
+        traceback.print_exc()
 
     return {"message": f"Status updated to {new_status}", "booking": updated}
 
 @router.post("/{booking_id}/confirm-payment")
-async def confirm_booking_payment(booking_id: str):
-    """Simulate ₹1 payment confirmation"""
+async def confirm_booking_payment(booking_id: str, confirmation: PaymentConfirmationRequest):
+    """Securely confirm booking after Razorpay payment"""
     booking = get_booking_by_id(booking_id)
     if not booking or booking["status"] != "AWAITING_CUSTOMER_CONFIRMATION":
         raise HTTPException(status_code=400, detail="Booking not in confirmable state")
     
-    # Check if expired
+    # 1. Verify Payment Signature
+    is_valid = PaymentService.verify_payment_signature(
+        payment_id=confirmation.razorpay_payment_id,
+        order_id=confirmation.razorpay_order_id,
+        signature=confirmation.razorpay_signature
+    )
+    
+    if not is_valid:
+        raise HTTPException(status_code=400, detail="Invalid payment signature")
+
+    # 2. Check if expired
     if booking.get("expiresAt") and datetime.utcnow() > booking["expiresAt"]:
         update_booking(booking_id, {"status": "EXPIRED"})
         raise HTTPException(status_code=400, detail="Booking has expired")
         
-    return await update_booking_status_route(booking_id, "CONFIRMED")
+    # 3. Update status to CONFIRMED
+    result = await update_booking_status_route(booking_id, "CONFIRMED")
+    
+    # Update notes with payment info
+    new_notes = (booking.get("notes") or "") + f"\n[PAYMENT] Confirmed via App. ID: {confirmation.razorpay_payment_id}"
+    update_booking(booking_id, {"notes": new_notes})
+    
+    return result
 
 @router.delete("/{booking_id}")
 async def cancel_booking_route(booking_id: str):

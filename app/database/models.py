@@ -1,4 +1,5 @@
-from sqlalchemy import Column, String, Float, Integer, JSON, DateTime, ForeignKey, Boolean, UniqueConstraint
+from sqlalchemy import Column, String, Float, Integer, JSON, DateTime, ForeignKey, Boolean, UniqueConstraint, Index, func
+from sqlalchemy.dialects.postgresql import TSTZRANGE
 from sqlalchemy.orm import relationship
 from app.database.database import Base
 from datetime import datetime
@@ -172,8 +173,10 @@ class Booking(Base) :
     staffId = Column(String, ForeignKey("staff_profiles.id"))
     services = Column(JSON, default=[]) 
     date = Column(String, nullable=False) 
-    timeSlot = Column(String, nullable=False)
-    status = Column(String, default="PENDING") 
+    timeSlot = Column(String, nullable=False) # Deprecated: Use startTime/endTime
+    startTime = Column(DateTime(timezone=True), nullable=True, index=True)
+    endTime = Column(DateTime(timezone=True), nullable=True, index=True)
+    status = Column(String, default="PENDING", index=True) 
     isPaidConfirmation = Column(Boolean, default=False)
     expiresAt = Column(DateTime, nullable=True)
     totalAmount = Column(Float, nullable=False)
@@ -184,6 +187,10 @@ class Booking(Base) :
     reminded24h = Column(Boolean, default=False)
     reminded2h = Column(Boolean, default=False)
     reminded15m = Column(Boolean, default=False)
+
+    __table_args__ = (
+        Index('ix_bookings_staff_range_status', 'staffId', 'startTime', 'endTime', 'status'),
+    )
 
 class Review(Base):
     __tablename__ = "reviews"

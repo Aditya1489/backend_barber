@@ -7,7 +7,7 @@ from fastapi.responses import JSONResponse
 import asyncio
 from datetime import datetime
 from contextlib import asynccontextmanager
-from app.routers import base, profile, auth, bookings, shops, reviews, analytics, notifications, uploads, owner, users, invites
+from app.routers import base, profile, auth, bookings, shops, reviews, analytics, notifications, uploads, owner, users, invites, navigation, payments
 from app.services.booking_service import BookingService
 from app.services.fcm_service import FCMService
 
@@ -102,6 +102,8 @@ app.include_router(notifications.router, prefix="/api/v1")
 app.include_router(uploads.router, prefix="/api/v1")
 app.include_router(owner.router, prefix="/api/v1")
 app.include_router(users.router, prefix="/api/v1")
+app.include_router(navigation.router, prefix="/api/v1")
+app.include_router(payments.router, prefix="/api/v1")
 app.include_router(base.router, prefix="/api/v1")
 
 # Serve static files from the uploads directory

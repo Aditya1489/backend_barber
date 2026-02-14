@@ -11,16 +11,35 @@ class NotificationRepository(BaseRepository):
     """Repository for Notification entity operations."""
     
     @classmethod
-    def create(cls, data: dict):
+    def create(cls, data: dict = None, **kwargs):
         """Create a new notification."""
+        if data is None:
+            data = kwargs
+        
+        # Support both casing variants
+        if "user_id" in data and "userId" not in data:
+            data["userId"] = data.pop("user_id")
+        if "notif_type" in data and "type" not in data:
+            data["type"] = data.pop("notif_type")
+        
+        # Defensive defaults
+        u_id = data.get("userId")
+        title = data.get("title", "Notification")
+        body = data.get("body", "")
+        n_type = data.get("type", "SYSTEM")
+        
+        if not u_id:
+            print(f"⚠️ [NOTIF] Missing userId in notification data: {data}")
+            return None
+
         db = SessionLocal()
         try:
             new_notif = models.Notification(
                 id=str(uuid.uuid4()),
-                userId=data["userId"],
-                title=data["title"],
-                body=data["body"],
-                type=data["type"],
+                userId=u_id,
+                title=title,
+                body=body,
+                type=n_type,
                 data=data.get("data", {}),
                 isRead=False
             )

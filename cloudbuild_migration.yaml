@@ -1,0 +1,14 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '-t', 'gcr.io/barberbook24-backend/barberbook-backend', '.']
+- name: 'gcr.io/barberbook24-backend/barberbook-backend'
+  entrypoint: 'sh'
+  args: 
+    - '-c'
+    - 'alembic upgrade head'
+  env:
+    - 'DATABASE_URL=postgresql://postgres:aditya123@/barbersync?host=/cloudsql/barberbook24-backend:us-central1:barbersync-db'
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['push', 'gcr.io/barberbook24-backend/barberbook-backend']
+options:
+  cloudSqlInstances: ['barberbook24-backend:us-central1:barbersync-db']

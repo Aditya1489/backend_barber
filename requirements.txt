@@ -12,3 +12,6 @@ alembic
 python-dotenv
 email-validator
 firebase-admin
+google-cloud-storage
+google-cloud-core
+razorpay

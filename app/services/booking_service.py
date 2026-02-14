@@ -27,7 +27,7 @@ class BookingService:
                 
                 # Notify customer
                 NotificationRepository.create(
-                    user_id=booking.customerId,
+                    userId=booking.customerId,
                     title="Booking Expired",
                     body="Your booking request has expired because the confirmation fee was not paid in time.",
                     notif_type="APPOINTMENT",
@@ -38,7 +38,7 @@ class BookingService:
                 staff = db.query(models.Staff).filter(models.Staff.id == booking.staffId).first()
                 if staff:
                     NotificationRepository.create(
-                        user_id=staff.userId,
+                        userId=staff.userId,
                         title="Booking Slot Released",
                         body=f"Slot {booking.timeSlot} on {booking.date} has been released due to unpaid confirmation.",
                         notif_type="APPOINTMENT",
@@ -106,7 +106,7 @@ class BookingService:
                         shop = db.query(models.Shop).filter(models.Shop.id == staff.shopId).first()
                         if shop:
                             NotificationRepository.create(
-                                user_id=shop.ownerId,
+                                userId=shop.ownerId,
                                 title=f"Staff Alert: {staff.name}",
                                 body=f"{staff.name} missed their first appointment today. They have been marked as UNAVAILABLE for now.",
                                 notif_type="SYSTEM",
@@ -144,7 +144,7 @@ class BookingService:
                     logger.info(f"Shop {shop.name} | Revenue: {total_revenue} | Fee: {platform_fee}")
                     from app.repositories import NotificationRepository
                     NotificationRepository.create(
-                        user_id=shop.ownerId,
+                        userId=shop.ownerId,
                         title="Monthly Revenue Summary",
                         body=f"Your shop earned {total_revenue} this month. The platform fee (20%) is {platform_fee}. An invoice has been generated.",
                         notif_type="SYSTEM",
@@ -194,7 +194,7 @@ class BookingService:
                     # 24 Hour Reminder
                     if timedelta(hours=23) < diff <= timedelta(hours=24) and not b.reminded24h:
                         NotificationRepository.create(
-                            user_id=b.customerId,
+                            userId=b.customerId,
                             title="Appointment Tomorrow 📅",
                             body=f"Reminder: You have a haircut scheduled tomorrow at {b.timeSlot}.",
                             notif_type="APPOINTMENT",
@@ -205,7 +205,7 @@ class BookingService:
                     # 2 Hour Reminder
                     elif timedelta(hours=1.5) < diff <= timedelta(hours=2) and not b.reminded2h:
                         NotificationRepository.create(
-                            user_id=b.customerId,
+                            userId=b.customerId,
                             title="Appointment in 2 Hours! 💈",
                             body=f"Get ready! Your appointment at {b.timeSlot} is in just 2 hours.",
                             notif_type="APPOINTMENT",
@@ -216,7 +216,7 @@ class BookingService:
                     # 15 Minute Reminder
                     elif timedelta(minutes=10) < diff <= timedelta(minutes=15) and not b.reminded15m:
                         NotificationRepository.create(
-                            user_id=b.customerId,
+                            userId=b.customerId,
                             title="Almost Time! 🕒",
                             body="Your barber is waiting. Your appointment starts in 15 minutes.",
                             notif_type="APPOINTMENT",

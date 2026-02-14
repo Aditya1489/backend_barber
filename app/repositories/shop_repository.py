@@ -364,6 +364,13 @@ class StaffProfileRepository(BaseRepository):
                     for url in portfolio:
                         db.add(models.StaffWorkPhoto(staffId=staff.id, url=url))
 
+                # Handle service allotment sync
+                services = update_data.pop("services", None)
+                if services is not None and isinstance(services, list):
+                    # Fetch correct Service objects from DB
+                    service_objects = db.query(models.Service).filter(models.Service.id.in_(services)).all()
+                    staff.service_objs = service_objects
+
                 for key, value in update_data.items():
                     if hasattr(staff, key):
                         setattr(staff, key, value)
@@ -400,6 +407,12 @@ class StaffProfileRepository(BaseRepository):
                 elif "portfolio" in update_data:
                     for url in update_data["portfolio"]:
                         db.add(models.StaffWorkPhoto(staffId=staff.id, url=url))
+                
+                # Handle service allotment for new staff
+                services = update_data.get("services")
+                if services and isinstance(services, list):
+                    service_objects = db.query(models.Service).filter(models.Service.id.in_(services)).all()
+                    staff.service_objs = service_objects
                 
                 db.commit()
                 db.refresh(staff)

@@ -1,0 +1,15 @@
+.env
+.git
+.gitignore
+venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.db
+db.sqlite3
+.pytest_cache
+.vscode
+.idea
+*.log
+cloudbuild_migration.yaml
